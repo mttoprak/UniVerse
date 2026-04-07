@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "node.js ve express tabanlı REST API",
   "main": "src/index.ts",
+  "type": "commonjs",
   "scripts": {
     "dev": "nodemon src/index.ts",
     "build": "tsc",
@@ -11,12 +12,19 @@
   },
   "author": "Ahmet Emin Genc, İsmail Gultekin, Mehmet Toprak",
   "license": "ISC",
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5",
+    "mongoose": "^8.3.2",
+    "dotenv": "^16.4.5",
+    "socket.io": "^4.7.5"
+  },
   "devDependencies": {
     "@types/cors": "^2.8.19",
-    "@types/express": "^5.0.6",
-    "@types/node": "^25.5.2",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
     "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
-    "typescript": "^6.0.2"
+    "typescript": "^5.4.5"
   }
 }
