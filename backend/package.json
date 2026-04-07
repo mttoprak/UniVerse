@@ -1,22 +1,16 @@
 {
-  "name": "backend",
+  "name": "universe-backend",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "node.js ve express tabanlı REST API",
+  "main": "src/index.ts",
   "scripts": {
+    "dev": "nodemon src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
-  "author": "",
+  "author": "Ahmet Emin Genc, İsmail Gultekin, Mehmet Toprak",
   "license": "ISC",
-  "type": "commonjs",
-  "dependencies": {
-    "cors": "^2.8.6",
-    "dotenv": "^17.4.1",
-    "express": "^5.2.1",
-    "mongoose": "^9.4.1",
-    "socket.io": "^4.8.3"
-  },
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
