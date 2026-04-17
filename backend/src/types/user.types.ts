@@ -1,6 +1,6 @@
 /*
  * In user.types.ts we define the types for using
- * mongoose/mongodb models into typescript types
+ * mongoose/mongodb models into TypeScript types
  *
  */
 
