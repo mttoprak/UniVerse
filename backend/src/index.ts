@@ -10,46 +10,61 @@
  */
 
 
+import dotenv from "dotenv"
+dotenv.config()
 
-import express, { Request, Response } from 'express'; // I think we can rephrase this as
-// " import * as express from 'express' " but the first rule of the programing is never touch any code that works
-import dotenv from "dotenv";
-import mongoose from "mongoose";
-import cors from 'cors';
-
-const app = express();
-const PORT = process.env.PORT || 5000;
-
-
-dotenv.config();
-app.use(express.json());
-app.use(cors());
+import express, { Request, Response } from "express"
+import mongoose from "mongoose"
+import cors from "cors"
+import authRouter from "./routes/auth.router"
+import userRouter from "./routes/user.router"
 
 
-const connect=async()=>{ //connection to the database
+const app = express()
+const PORT = process.env.PORT || 5000
+
+// ─── MIDDLEWARE ──────────────────────────────
+app.use(express.json())
+app.use(cors({
+    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    credentials: true
+}))
+
+// ─── ROUTES ──────────────────────────────────
+
+// We will add these in the future
+app.use("/api/auth", authRouter)
+// app.use("/api/auth", authRoutes)
+// app.use("/api/users", userRoutes)
+
+app.get("/", (req: Request, res: Response) => {
+    res.json({ message: "UniVerse Backend API working" })
+})
+
+// ─── DB + SERVER ─────────────────────────────
+const connect = async () => {
     if (!process.env.MONGO_URI) {
-        console.error("Error: MONGO_URI environment variable is not defined.");
-        process.exit(1);
+        console.error("MONGO_URI is not defined")
+        process.exit(1)
     }
+    await mongoose.connect(process.env.MONGO_URI)
+    console.log("Connected to MongoDB Atlas")
+}
+
+mongoose.connection.on("disconnected", () => {
+    console.log("MongoDB disconnected!")
+})
+
+const start = async () => {
     try {
-        await mongoose.connect(process.env.MONGO_URI);
-        console.log("Connected to MongoDB Atlas");
-        console.log(`Backend server running on port ${PORT}`);
+        await connect()
+        app.listen(PORT, () => {
+            console.log(`Server running on http://localhost:${PORT}`)
+        })
     } catch (error) {
-        console.error("DB Connection Error:", error);
+        console.error("Startup error:", error)
+        process.exit(1)
     }
 }
 
-mongoose.connection.on("disconnected", () => { // the error message when database disconnection
-    console.log("mongoDB disconnected!");
-});
-
-
-app.get('/', (req: Request, res: Response) => {
-    res.send('UniVerse Backend API working');
-});
-
-app.listen(PORT, () => {
-    connect() //database
-    console.log(`Server started working in http://localhost:${PORT}!`);
-});
+start()

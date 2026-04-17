@@ -5,10 +5,8 @@
  */
 
 
-
-
-
 import mongoose, {Schema,  } from "mongoose";
+import {IUser} from "../types/user.types";
 
 const UserSchema = new Schema({
     // ─── CREDENTIALS ──────────────────────────────────────
@@ -50,7 +48,11 @@ const UserSchema = new Schema({
     university:         { type: String } ,
     favourite_listings: [{ type: mongoose.Schema.Types.ObjectId, ref: "Listing" }],
     favourite_sellers:  [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    // saved_listings:     { type: Map<String,String>} , Could be a feature
     rating_sum:         { type: Number, default: 0 },
     rating_count:       { type: Number, default: 0 },
 
 }, { timestamps: true })  // created_at, updated_at automatic
+
+const User = mongoose.model<IUser>("User", UserSchema)
+export default User
