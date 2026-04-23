@@ -28,7 +28,6 @@ export default function RegisterPage() {
                     </button>
                 </form>
 
-                {/* Öğrenci Doğrulama Bilgi Kutusu */}
                 <div className="mt-8 p-4 bg-violet-500/5 border border-violet-500/20 rounded-2xl flex items-start space-x-3 group hover:bg-violet-500/10 transition-colors">
                     <GraduationCap className="text-violet-400 mt-0.5 flex-shrink-0" size={18} />
                     <p className="text-[11px] leading-relaxed text-gray-400">

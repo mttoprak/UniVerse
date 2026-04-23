@@ -7,14 +7,14 @@ export default function Navbar() {
             <div className="max-w-[1440px] mx-auto px-6">
                 <div className="flex items-center justify-between h-20">
 
-                    {/* 1. SOL: Logo */}
+                    {/* logo */}
                     <div className="flex-shrink-0 w-1/4">
                         <Link href="/" className="text-2xl font-black tracking-tighter text-white group">
                             UNI<span className="text-cyan-400 group-hover:drop-shadow-[0_0_8px_rgba(34,211,238,0.8)] transition-all">VERSE</span>
                         </Link>
                     </div>
 
-                    {/* 2. ORTA: Navigasyon Linkleri */}
+                    {/* navigasyon linkleri */}
                     <div className="hidden lg:flex items-center justify-center space-x-10 w-2/4">
                         <Link href="/ilanlar" className="text-sm font-medium text-gray-400 hover:text-white transition-colors uppercase tracking-widest">
                             İlanlar
@@ -22,14 +22,14 @@ export default function Navbar() {
                         <Link href="/acil-ilanlar" className="relative group flex items-center space-x-2 text-sm font-bold text-rose-500 hover:text-rose-400 transition-colors uppercase tracking-widest">
                             <Zap size={16} className="fill-rose-500 animate-pulse" />
                             <span>Acil İlanlar</span>
-                            {/* Alt neon çizgi efekti */}
+                            {/* alt neon çizgi efekti (flash-listing) */}
                             <span className="absolute -bottom-1 left-0 w-0 h-[2px] bg-rose-500 group-hover:w-full transition-all duration-300 shadow-[0_0_10px_#f43f5e]"></span>
                         </Link>
                     </div>
 
-                    {/* 3. SAĞ: Arama ve Butonlar */}
+                    {/* search ve giriş/kayıt butonları */}
                     <div className="flex items-center justify-end space-x-6 w-1/4">
-                        {/* Minimalist Arama Çubuğu */}
+                        {/* (GÜNCELLENECEK) arama çubuğu */}
                         <div className="hidden sm:flex items-center bg-white/5 border border-white/10 rounded-full px-4 py-1.5 focus-within:border-cyan-500/50 transition-all">
                             <Search size={16} className="text-gray-500" />
                             <input
@@ -39,7 +39,7 @@ export default function Navbar() {
                             />
                         </div>
 
-                        {/* Butonlar */}
+                        {/* giriş/kayıt butonları */}
                         <div className="flex items-center space-x-3">
                             <Link href="/login" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">
                                 Giriş
