@@ -6,6 +6,7 @@ export const localRegisterSchema = z.object({
     name:         z.string().min(2),
     surname:      z.string().min(2),
     account_type: z.enum(["student", "external"]),
+    code:         z.string().length(6).regex(/^\d{6}$/),  // email
 })
 
 export const completeProfileSchema = z.object({
@@ -56,4 +57,16 @@ export const completeProfileSchema = z.object({
 export const loginSchema = z.object({
     email:    z.email(),
     password: z.string(),
+})
+
+export const sendVerificationSchema = z.object({
+    email: z.email(),
+})
+
+export const localRegisterValidationSchema = z.object({
+    email:        z.email(),
+    password:     z.string().min(8),
+    name:         z.string().min(2),
+    surname:      z.string().min(2),
+    account_type: z.enum(["student", "external"])
 })

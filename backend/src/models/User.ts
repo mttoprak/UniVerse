@@ -35,7 +35,7 @@ const UserSchema = new Schema({
     auth_provider:{ type: String, enum: ["local", "google"], required: true },
     is_complete:  { type: Boolean, default: false },
 
-    // is_verified:  { type: Boolean, default: false },
+    is_verified:  { type: Boolean, default: false },
     /* Should we add this?
     * Because it is going to be validated while the user tries to add their email
     * */
@@ -44,11 +44,11 @@ const UserSchema = new Schema({
     is_banned:    { type: Boolean, default: false },
     is_admin:     { type: Boolean, default: false },
 
-    // ─── PLATFORM VERİSİ (sadece student'ta dolu olur) ────
+    // ─── PLATFORM DATA (it is only for student type of user can have it) ────
     university:         { type: String } ,
-    favourite_listings: [{ type: mongoose.Schema.Types.ObjectId, ref: "Listing" }],
-    favourite_sellers:  [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-    // saved_listings:     { type: Map<String,String>} , Could be a feature
+    favorite_listings: [{ type: mongoose.Schema.Types.ObjectId, ref: "Listing" }],
+    favorite_sellers:  [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    saved_listings:     { type: Map<String,{ type: mongoose.Schema.Types.ObjectId, ref: "Listing" }>} , //Could be a feature
     rating_sum:         { type: Number, default: 0 },
     rating_count:       { type: Number, default: 0 },
 
