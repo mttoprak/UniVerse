@@ -1,13 +1,13 @@
 import { Router } from "express"
 import { studentOnly , authMiddleware } from "../middleware/middleware"
-import {helloworld} from "../controllers/user.controller";
+import {updateUser} from "../controllers/user.controller";
 
 
 
 const router = Router()
 
 
-router.post("/helloworld", authMiddleware, helloworld)
+router.post("/updateUser", authMiddleware, updateUser)
 
 
 

@@ -5,6 +5,7 @@ import User from "../models/User"
 import { signAccessToken, signTempToken } from "../utils/token.utils"
 import { localRegisterSchema, loginSchema, completeProfileSchema } from "../validators/auth.validator"
 import { OAuth2Client } from "google-auth-library"
+import PendingVerification from "../models/PendingVerification";
 
 
 // ─── LOCAL REGISTER ────────────────────────────────────────────
@@ -18,7 +19,18 @@ export const register = async (req: Request, res: Response) => {
             });
         }
 
-        const { email, password, name, surname, account_type } = parsed.data
+        const { email, password, name, surname, account_type, code } = parsed.data
+
+        const verification= await PendingVerification.findOne({email})
+        if (!verification) {
+            return res.status(400).json({error: "There is no verification"})
+        }
+
+        const comparization = bcrypt.compare(code, verification.code);
+        if (!comparization) {
+            return res.status(400).json({error: "Wrong verification code"})
+        }
+
 
         // 2. Is this email taken?
         const existing = await User.findOne({ email })
@@ -45,8 +57,9 @@ export const register = async (req: Request, res: Response) => {
         const tempToken = signTempToken(user._id.toString())
         return res.status(201).json({ tempToken })
 
-    } catch (error) {
-        return res.status(500).json({ error: "Server Error" })
+    } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: "Server error" })
     }
 }
 
@@ -92,8 +105,9 @@ export const login = async (req: Request, res: Response) => {
         const accessToken = signAccessToken(user._id.toString())
         return res.status(200).json({ accessToken, is_complete: true })
 
-    } catch (error) {
-        return res.status(500).json({ error: "Server Error" })
+    } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: "Server error" })
     }
 }
 
@@ -141,14 +155,15 @@ export const completeProfile = async (req: Request, res: Response) => {
             updateData.password = await bcrypt.hash(password, 12)
         }
 
-        // 6. Güncelle
+        // 6. Update
         await User.findByIdAndUpdate(req.userId, updateData)
 
-        // 7. Artık tam access token ver
+        // 7. Grant full access
         const accessToken = signAccessToken(req.userId!)
         return res.status(200).json({ accessToken })
 
-    } catch (error) {
+    } catch (e) {
+        console.error(e);
         return res.status(500).json({ error: "Server error" })
     }
 }
@@ -159,7 +174,7 @@ export const getMe = async (req: Request, res: Response) => {
         const user = await User.findById(req.userId).select("-password -googleId")
         if (!user) return res.status(404).json({ error: "User not found" })
         return res.status(200).json(user)
-    } catch (error) {
-        return res.status(500).json({ error: "Server error" })
-    }
+    } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: "Server error" })    }
 }

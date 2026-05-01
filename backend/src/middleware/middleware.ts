@@ -1,5 +1,5 @@
 /*
- *
+ *middleware.ts
  *
  */
 
@@ -42,7 +42,7 @@ export const studentOnly = async (req: Request, res: Response, next: NextFunctio
         if (user?.account_type !== "student") {
             return res.status(403).json({ error: "Only students can go through " })
         }
-        req.user = user  // sonraki route'da tekrar DB'ye gitmez
+        //req.user = user   sonraki route'da tekrar DB'ye gitmez
         req.user = user  // this prevents fetching the user from the database again
         next()
     }catch (e) {

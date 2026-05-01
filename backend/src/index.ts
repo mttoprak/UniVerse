@@ -18,6 +18,7 @@ import mongoose from "mongoose"
 import cors from "cors"
 import authRouter from "./routes/auth.router"
 import userRouter from "./routes/user.router"
+import {Resend} from "resend";
 
 
 const app = express()
@@ -47,7 +48,7 @@ const connect = async () => {
         console.error("MONGO_URI is not defined")
         process.exit(1)
     }
-    await mongoose.connect(process.env.MONGO_URI)
+    await mongoose.connect(process.env.MONGO_URI, {dbName: 'UniVerse'})
     console.log("Connected to MongoDB Atlas")
 }
 
@@ -65,6 +66,7 @@ const start = async () => {
         console.error("Startup error:", error)
         process.exit(1)
     }
+
 }
 
 start()
