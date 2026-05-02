@@ -24,12 +24,15 @@ const mockLocations: Record<string, string[]> = {
     "Ankara": ["Çankaya", "Keçiören", "Yenimahalle", "Mamak", "Etimesgut"]
 };
 
+//temp predefined rules for roommate category (will be dynamic in real app, maybe with tags or something)
 const predefinedRules = ["Sigara İçilmez", "Sigara İçmeyen Aranıyor", "Evcil Hayvan Yasak", "Evcil Hayvan Dostu", "Sadece Öğrenci", "Sadece Çalışan", "Misafir Yasak", "Düzenli/Temiz", "Vejetaryen/Vegan"];
 
 export default function CreateListingWizard() {
     const [step, setStep] = useState(1);
     const [selectedCat, setSelectedCat] = useState<string | null>(null);
     const [isVerifiedStudent, setIsVerifiedStudent] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
     // centralized form data state
     const [formData, setFormData] = useState({
@@ -83,6 +86,43 @@ export default function CreateListingWizard() {
 
     const handleFormChange = (key: string, value: string) => {
         setFormData(prev => ({ ...prev, [key]: value }));
+    };
+
+    const submitListing = async () => {
+        setIsSubmitting(true);
+        setSubmitStatus('idle');
+
+        try {
+            const API_URL = "http://localhost:5000/api/adverts";
+
+            // change this payload structure according to our backend requirements. Currently, it includes category and all form data in a flat structure.
+            const payload = {
+                category: selectedCat,
+                ...formData
+            };
+
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    // 'Authorization': `Bearer ${localStorage.getItem('token')}`
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                throw new Error('Listing submission failed');
+            }
+
+            console.log("Listing created successfully");
+            setSubmitStatus('success');
+
+        } catch (error) {
+            console.error("Error submitting listing:", error);
+            setSubmitStatus('error');
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     const handleCityChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -479,11 +519,18 @@ export default function CreateListingWizard() {
                     <ArrowLeft size={20} /><span>Geri</span>
                 </button>
                 <button
-                    onClick={() => step === 4 ? console.log("Yayınlandı:", formData) : nextStep()}
-                    disabled={isNextDisabled()}
-                    className={`flex items-center space-x-2 px-8 py-3 rounded-full font-black text-[#0B0F19] transition-all duration-300 ${isNextDisabled() ? 'bg-gray-700 cursor-not-allowed opacity-50' : 'bg-cyan-500 hover:bg-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.3)] hover:shadow-[0_0_30px_rgba(34,211,238,0.5)]'}`}
-                >
-                    <span>{step === 3 ? 'Önizlemeyi Gör' : step === 4 ? 'YAYINLA' : 'Devam Et'}</span>
+                    onClick={() => step === 4 ? submitListing() : nextStep()}
+                    disabled={isNextDisabled() || isSubmitting}
+                    className={`flex items-center space-x-2 px-8 py-3 rounded-full font-black text-[#0B0F19] transition-all duration-300 ${
+                        isNextDisabled() || isSubmitting
+                            ? 'bg-gray-700 cursor-not-allowed opacity-50'
+                            : submitStatus === 'success'
+                                ? 'bg-emerald-500'
+                                : 'bg-cyan-500 hover:bg-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.3)] hover:shadow-[0_0_30px_rgba(34,211,238,0.5)]'}`}>
+                    <span>
+                      {isSubmitting ? 'Yayınlanıyor...' :
+                          submitStatus === 'success' ? 'İlanınız Başarıyla Yayınlandı!' : step === 3 ? 'Önizlemeyi Gör' : step === 4 ? 'YAYINLA' : 'Devam Et'}
+                    </span>
                     {step !== 4 && <ArrowRight size={20} />}
                 </button>
             </div>
