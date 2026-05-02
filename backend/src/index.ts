@@ -19,6 +19,7 @@ import cors from "cors"
 import authRouter from "./routes/auth.router"
 import userRouter from "./routes/user.router"
 import {Resend} from "resend";
+import miscRouter from "./routes/misc.router";
 
 
 const app = express()
@@ -35,6 +36,7 @@ app.use(cors({
 
 // We will add these in the future
 app.use("/api/auth", authRouter)
+app.use("/api/misc", miscRouter)
 // app.use("/api/auth", authRoutes)
 // app.use("/api/users", userRoutes)
 
