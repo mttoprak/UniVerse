@@ -27,7 +27,7 @@ export const completeProfileSchema = z.object({
         .regex(/^\+?[0-9]{10,13}$/, "Invalid phone number")
         .optional(),
 
-    birthdate: z.date().optional(),// in "1990-01-15" format
+    birthdate: z.coerce.date().optional(),// in "1990-01-15" format
 
     university: z.string().optional(),
 
