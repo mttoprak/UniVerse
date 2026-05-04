@@ -76,7 +76,7 @@ export default function Navbar() {
                         ) : isLoggedIn ? (
                             // LOGGED IN STATE
                             <div className="flex items-center space-x-4">
-                                <Link href="/create-ad" className="hidden sm:flex items-center space-x-1 px-4 py-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/50 rounded-xl hover:bg-emerald-500 hover:text-[#0B0F19] transition-all font-black text-xs uppercase tracking-widest shadow-[0_0_15px_rgba(16,185,129,0.15)] hover:shadow-[0_0_20px_rgba(16,185,129,0.4)]">
+                                <Link href="/create-listing" className="hidden sm:flex items-center space-x-1 px-4 py-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/50 rounded-xl hover:bg-emerald-500 hover:text-[#0B0F19] transition-all font-black text-xs uppercase tracking-widest shadow-[0_0_15px_rgba(16,185,129,0.15)] hover:shadow-[0_0_20px_rgba(16,185,129,0.4)]">
                                     <Plus size={16} strokeWidth={3} />
                                     <span>İlan Ver</span>
                                 </Link>
