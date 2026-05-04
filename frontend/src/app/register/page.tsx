@@ -79,7 +79,7 @@ export default function RegisterPage() {
         setIsLoading(true);
         setError(null);
         try {
-            const response = await fetch('http://localhost:5000/api/auth/register', {
+            const response = await fetch('http://localhost:5000/api/users/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -113,7 +113,6 @@ export default function RegisterPage() {
                 username: formData.username,
             };
 
-            // edu_email gönderimi kaldırıldı, sadece üniversite adı opsiyonel olarak gidiyor
             if (formData.account_type === 'student') {
                 if (formData.university) payload.university = formData.university;
             }
