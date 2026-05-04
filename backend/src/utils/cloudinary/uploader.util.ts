@@ -8,21 +8,21 @@ export interface UploadedFile {
     type: 'image' | 'video';
     width?: number;
     height?: number;
-    duration?: number; // video için saniye
+    duration?: number; // seconds of video
 }
 
-// ─── Tek dosya yükle ───────────────────────────────────────────────
+// ─── Upload Single File ───────────────────────────────────────────────
 export const uploadSingle = async (
     file: Express.Multer.File,
     preset: UploadPresetKey
 ): Promise<UploadedFile> => {
     const config = UPLOAD_PRESETS[preset];
 
-    // Boyut kontrolü
+    // File size control
     const fileSizeMB = file.size / (1024 * 1024);
     if (fileSizeMB > config.maxFileSizeMB) {
         throw new Error(
-            `Dosya çok büyük. Max: ${config.maxFileSizeMB}MB, Gelen: ${fileSizeMB.toFixed(1)}MB`
+            `File is too big. Max: ${config.maxFileSizeMB}MB, Your file: ${fileSizeMB.toFixed(1)}MB`
         );
     }
 
@@ -33,18 +33,18 @@ export const uploadSingle = async (
         quality: config.quality,
     };
 
-    // Image preset'e özel ayarlar
+    // Special adjustments for image presets
     if (config.type === 'image') {
         uploadOptions.transformation = [
             {
                 width: config.maxWidth,
                 height: config.maxHeight,
-                crop: 'limit', // zorla kırpmaz, sığdırır
+                crop: 'limit', // It doesn't trim, makes fit
             },
         ];
     }
 
-    // Video preset'e özel ayarlar
+    // Special adjustments for video presets
     if (config.type === 'video') {
         uploadOptions.transformation = [
             {
@@ -53,7 +53,7 @@ export const uploadSingle = async (
             },
         ];
         uploadOptions.eager = [
-            // thumbnail otomatik üret
+            // create thumbnail automatically
             { resource_type: 'image', format: 'jpg', transformation: [{ width: 400, height: 400, crop: 'fill' }] },
         ];
         uploadOptions.eager_async = true;
@@ -80,17 +80,17 @@ export const uploadSingle = async (
     });
 };
 
-// ─── Çoklu dosya yükle (post fotoğrafları) ─────────────────────────
+// ─── Uploading Multiple Files (Listing Photos) ─────────────────────────
 export const uploadMultiple = async (
     files: Express.Multer.File[],
     preset: UploadPresetKey,
     maxCount: number = 5
 ): Promise<UploadedFile[]> => {
     if (files.length > maxCount) {
-        throw new Error(`En fazla ${maxCount} dosya yükleyebilirsin.`);
+        throw new Error(`You can upload ${maxCount} files.`);
     }
 
-    // Hepsini paralel yükle
+    // Uploading every single file in parallel
     const results = await Promise.allSettled(
         files.map((file) => uploadSingle(file, preset))
     );
@@ -102,18 +102,18 @@ export const uploadMultiple = async (
         if (result.status === 'fulfilled') {
             uploaded.push(result.value);
         } else {
-            errors.push(`Dosya ${i + 1}: ${result.reason?.message}`);
+            errors.push(`File ${i + 1}: ${result.reason?.message}`);
         }
     });
 
     if (errors.length > 0) {
-        throw new Error(`Bazı dosyalar yüklenemedi:\n${errors.join('\n')}`);
+        throw new Error(`Some files couldn't uploaded:\n${errors.join('\n')}`);
     }
 
     return uploaded;
 };
 
-// ─── Cloudinary'den sil ────────────────────────────────────────────
+// ─── Deleting Files from Cloudinary ────────────────────────────────────────────
 export const deleteFile = async (
     publicId: string,
     type: 'image' | 'video' = 'image'

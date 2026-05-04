@@ -1,4 +1,4 @@
-export type UploadPresetKey = 'profilePhoto' | 'postPhoto' | 'postVideo';
+export type UploadPresetKey = 'profilePhoto' | 'listingPhoto' | 'listingVideo';
 
 interface ImagePreset {
     type: 'image';
@@ -28,7 +28,7 @@ export const UPLOAD_PRESETS: Record<UploadPresetKey, Preset> = {
         quality: 'auto:good',
         maxFileSizeMB: 5,
     },
-    postPhoto: {
+    listingPhoto: {
         type: 'image',
         folder: 'universe/posts',
         maxWidth: 1200,
@@ -36,10 +36,10 @@ export const UPLOAD_PRESETS: Record<UploadPresetKey, Preset> = {
         quality: 'auto:good',
         maxFileSizeMB: 10,
     },
-    postVideo: {
+    listingVideo: {
         type: 'video',
         folder: 'universe/videos',
-        maxDurationSec: 60,       // max 1 dakika
+        maxDurationSec: 60,       // 1 minute max
         quality: 'auto',
         maxFileSizeMB: 100,
     },

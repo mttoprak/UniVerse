@@ -17,6 +17,7 @@ import express, { Request, Response } from "express"
 import mongoose from "mongoose"
 import cors from "cors"
 import authRouter from "./routes/auth.router"
+import testRouter from './routes/test.router';
 import userRouter from "./routes/user.router"
 import {Resend} from "resend";
 import miscRouter from "./routes/misc.router";
@@ -37,6 +38,7 @@ app.use(cors({
 // We will add these in the future
 app.use("/api/auth", authRouter)
 app.use("/api/misc", miscRouter)
+app.use('/api/test', testRouter);
 // app.use("/api/auth", authRoutes)
 // app.use("/api/users", userRoutes)
 
