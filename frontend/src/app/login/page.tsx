@@ -3,10 +3,10 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { Mail, Lock, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
-// import { useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
-    // const router = useRouter();
+    const router = useRouter();
 
     // state management for UI feedback and form data
     const [isLoading, setIsLoading] = useState(false);
@@ -55,7 +55,7 @@ export default function LoginPage() {
         setFieldErrors({});
 
         try {
-            const response = await fetch('http://localhost:5000/api/users/login', {
+            const response = await fetch('http://localhost:5000/api/auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(formData)
@@ -70,7 +70,7 @@ export default function LoginPage() {
                 // success: save full access token
                 localStorage.setItem('accessToken', data.accessToken);
                 alert("Login successful! Redirecting to feed...");
-                // router.push('/feed');
+                router.push('/feed');
             } else {
                 // incomplete profile: save temp token and show warning box
                 localStorage.setItem('tempToken', data.tempToken);
