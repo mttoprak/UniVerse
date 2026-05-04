@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from 'react';
-import { Mail, Lock, User, KeyRound, Building2, Calendar, ArrowRight, Loader2, ShieldCheck, AlertCircle } from 'lucide-react';
+import { Mail, Lock, User, KeyRound, Building2, Calendar, Loader2, ShieldCheck, AlertCircle } from 'lucide-react';
 
 export default function RegisterPage() {
     const [step, setStep] = useState(1);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    // Alan bazlı hataları tutmak için yeni state
     const [fieldErrors, setFieldErrors] = useState<{ [key: string]: string }>({});
 
     const [tempToken, setTempToken] = useState<string | null>(null);
@@ -20,7 +19,6 @@ export default function RegisterPage() {
         account_type: 'student',
         code: '',
         username: '',
-        edu_email: '',
         birthdate: '',
         university: ''
     });
@@ -29,7 +27,6 @@ export default function RegisterPage() {
         const { name, value } = e.target;
         setFormData({ ...formData, [name]: value });
 
-        // Kullanıcı yazmaya başlayınca o alandaki hata uyarısını temizle
         if (fieldErrors[name]) {
             setFieldErrors(prev => {
                 const updated = { ...prev };
@@ -39,7 +36,6 @@ export default function RegisterPage() {
         }
     };
 
-    // Arkadaşının gönderdiği Zod "error tree" yapısını parçalayan yardımcı fonksiyon
     const handleBackendErrors = (errData: any) => {
         if (errData.errors?.properties) {
             const newErrors: { [key: string]: string } = {};
@@ -117,11 +113,10 @@ export default function RegisterPage() {
                 username: formData.username,
             };
 
+            // edu_email gönderimi kaldırıldı, sadece üniversite adı opsiyonel olarak gidiyor
             if (formData.account_type === 'student') {
-                payload.edu_email = formData.edu_email;
                 if (formData.university) payload.university = formData.university;
             }
-            // Date string to Object conversion fix
             if (formData.birthdate) payload.birthdate = new Date(formData.birthdate);
 
             const response = await fetch('http://localhost:5000/api/auth/complete-profile', {
@@ -258,19 +253,12 @@ export default function RegisterPage() {
                         </div>
 
                         {formData.account_type === 'student' && (
-                            <>
-                                <div className="space-y-1">
-                                    <div className="relative">
-                                        <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 text-cyan-500" size={18} />
-                                        <input type="email" name="edu_email" value={formData.edu_email} onChange={handleChange} placeholder="Üniversite E-postası (@edu.tr)" className={`w-full bg-white/5 border ${fieldErrors.edu_email ? 'border-red-500/50' : 'border-white/10'} rounded-xl py-3 pl-10 pr-4 focus:border-cyan-500/50 outline-none text-white text-sm`} />
-                                    </div>
-                                    {fieldErrors.edu_email && <p className="text-[10px] text-red-400 ml-1 uppercase">{fieldErrors.edu_email}</p>}
-                                </div>
+                            <div className="space-y-1">
                                 <div className="relative">
                                     <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
                                     <input type="text" name="university" value={formData.university} onChange={handleChange} placeholder="Üniversite Adı (Opsiyonel)" className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-4 focus:border-cyan-500/50 outline-none text-white text-sm" />
                                 </div>
-                            </>
+                            </div>
                         )}
 
                         <div className="space-y-1">
