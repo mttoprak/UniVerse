@@ -1,65 +1,113 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import {
-    Briefcase, Car, BookOpen, Lock, ArrowRight, ArrowLeft,
-    CheckCircle2, ImagePlus, TurkishLira, Calendar, Users, MapPin,
-    FileText, Award, Presentation, ShoppingBag, Repeat, Home, Plus, X, Eye
+    Briefcase, Car, Lock, ArrowRight, ArrowLeft,
+    CheckCircle2, ImagePlus, TurkishLira, Calendar, MapPin,
+    FileText, Award, Presentation, ShoppingBag, Repeat, Home, Plus, X, Eye,
+    AlertTriangle, Video
 } from 'lucide-react';
 
 const categories = [
-    { id: 'job', title: 'İş / Staj', icon: Briefcase, requiresStudent: false, color: 'text-blue-400', border: 'border-blue-500/30', bg: 'hover:bg-blue-500/10', baseColor: 'blue' },
-    { id: 'scholarship', title: 'Burs', icon: Award, requiresStudent: false, color: 'text-yellow-400', border: 'border-yellow-500/30', bg: 'hover:bg-yellow-500/10', baseColor: 'yellow' },
-    { id: 'carpool', title: 'Yol Arkadaşı', icon: Car, requiresStudent: false, color: 'text-emerald-400', border: 'border-emerald-500/30', bg: 'hover:bg-emerald-500/10', baseColor: 'emerald' },
-    { id: 'roommate', title: 'Ev/Oda Arkadaşı', icon: Home, requiresStudent: true, color: 'text-teal-400', border: 'border-teal-500/30', bg: 'hover:bg-teal-500/10', baseColor: 'teal' },
-    { id: 'tutoring', title: 'Özel Ders', icon: Presentation, requiresStudent: true, color: 'text-indigo-400', border: 'border-indigo-500/30', bg: 'hover:bg-indigo-500/10', baseColor: 'indigo' },
-    { id: 'notes', title: 'Ders Notu', icon: FileText, requiresStudent: true, color: 'text-violet-400', border: 'border-violet-500/30', bg: 'hover:bg-violet-500/10', baseColor: 'violet' },
-    { id: 'secondhand', title: 'İkinci El Satış', icon: ShoppingBag, requiresStudent: true, color: 'text-rose-400', border: 'border-rose-500/30', bg: 'hover:bg-rose-500/10', baseColor: 'rose' },
+    { id: 'job', title: 'İş / Staj', icon: Briefcase, requiresStudent: false, color: 'text-blue-400', border: 'border-blue-500/30', bg: 'hover:bg-blue-500/10', previewBg: 'bg-blue-500', previewText: 'text-blue-400', previewPillBg: 'bg-blue-500/10', previewBorder: 'border-blue-500/20' },
+    { id: 'scholarship', title: 'Burs', icon: Award, requiresStudent: false, color: 'text-yellow-400', border: 'border-yellow-500/30', bg: 'hover:bg-yellow-500/10', previewBg: 'bg-yellow-500', previewText: 'text-yellow-400', previewPillBg: 'bg-yellow-500/10', previewBorder: 'border-yellow-500/20' },
+    { id: 'carpool', title: 'Yol Arkadaşı', icon: Car, requiresStudent: false, color: 'text-emerald-400', border: 'border-emerald-500/30', bg: 'hover:bg-emerald-500/10', previewBg: 'bg-emerald-500', previewText: 'text-emerald-400', previewPillBg: 'bg-emerald-500/10', previewBorder: 'border-emerald-500/20' },
+    { id: 'roommate', title: 'Ev/Oda Arkadaşı', icon: Home, requiresStudent: true, color: 'text-teal-400', border: 'border-teal-500/30', bg: 'hover:bg-teal-500/10', previewBg: 'bg-teal-500', previewText: 'text-teal-400', previewPillBg: 'bg-teal-500/10', previewBorder: 'border-teal-500/20' },
+    { id: 'tutoring', title: 'Özel Ders', icon: Presentation, requiresStudent: true, color: 'text-indigo-400', border: 'border-indigo-500/30', bg: 'hover:bg-indigo-500/10', previewBg: 'bg-indigo-500', previewText: 'text-indigo-400', previewPillBg: 'bg-indigo-500/10', previewBorder: 'border-indigo-500/20' },
+    { id: 'notes', title: 'Ders Notu', icon: FileText, requiresStudent: true, color: 'text-violet-400', border: 'border-violet-500/30', bg: 'hover:bg-violet-500/10', previewBg: 'bg-violet-500', previewText: 'text-violet-400', previewPillBg: 'bg-violet-500/10', previewBorder: 'border-violet-500/20' },
+    { id: 'secondhand', title: 'İkinci El Satış', icon: ShoppingBag, requiresStudent: true, color: 'text-rose-400', border: 'border-rose-500/30', bg: 'hover:bg-rose-500/10', previewBg: 'bg-rose-500', previewText: 'text-rose-400', previewPillBg: 'bg-rose-500/10', previewBorder: 'border-rose-500/20' },
+    // 1. YENİLİK: ACİL İLAN KATEGORİSİ
+    { id: 'emergency', title: 'Acil İlan', icon: AlertTriangle, requiresStudent: false, color: 'text-red-500', border: 'border-red-500/50', bg: 'hover:bg-red-500/20 shadow-[0_0_15px_rgba(239,68,68,0.2)]', previewBg: 'bg-red-500', previewText: 'text-red-500', previewPillBg: 'bg-red-500/10', previewBorder: 'border-red-500/20' }
 ];
 
- // mock data for dynamic location selection (temp)
-const mockLocations: Record<string, string[]> = {
-    "İzmir": ["Bornova", "Buca", "Karşıyaka", "Konak", "Çiğli", "Urla"],
-    "İstanbul": ["Kadıköy", "Beşiktaş", "Şişli", "Üsküdar", "Maltepe", "Sarıyer"],
-    "Ankara": ["Çankaya", "Keçiören", "Yenimahalle", "Mamak", "Etimesgut"]
-};
-
-//temp predefined rules for roommate category (will be dynamic in real app, maybe with tags or something)
 const predefinedRules = ["Sigara İçilmez", "Sigara İçmeyen Aranıyor", "Evcil Hayvan Yasak", "Evcil Hayvan Dostu", "Sadece Öğrenci", "Sadece Çalışan", "Misafir Yasak", "Düzenli/Temiz", "Vejetaryen/Vegan"];
 
+// Türkiye'deki 81 ilin ID ve isimlerini içeren dizi
+const TURKISH_CITIES = [
+    {id:"01",name:"Adana"},{id:"02",name:"Adıyaman"},{id:"03",name:"Afyonkarahisar"},{id:"04",name:"Ağrı"},{id:"05",name:"Amasya"},{id:"06",name:"Ankara"},{id:"07",name:"Antalya"},{id:"08",name:"Artvin"},{id:"09",name:"Aydın"},{id:"10",name:"Balıkesir"},{id:"11",name:"Bilecik"},{id:"12",name:"Bingöl"},{id:"13",name:"Bitlis"},{id:"14",name:"Bolu"},{id:"15",name:"Burdur"},{id:"16",name:"Bursa"},{id:"17",name:"Çanakkale"},{id:"18",name:"Çankırı"},{id:"19",name:"Çorum"},{id:"20",name:"Denizli"},{id:"21",name:"Diyarbakır"},{id:"22",name:"Edirne"},{id:"23",name:"Elazığ"},{id:"24",name:"Erzincan"},{id:"25",name:"Erzurum"},{id:"26",name:"Eskişehir"},{id:"27",name:"Gaziantep"},{id:"28",name:"Giresun"},{id:"29",name:"Gümüşhane"},{id:"30",name:"Hakkari"},{id:"31",name:"Hatay"},{id:"32",name:"Isparta"},{id:"33",name:"Mersin"},{id:"34",name:"İstanbul"},{id:"35",name:"İzmir"},{id:"36",name:"Kars"},{id:"37",name:"Kastamonu"},{id:"38",name:"Kayseri"},{id:"39",name:"Kırklareli"},{id:"40",name:"Kırşehir"},{id:"41",name:"Kocaeli"},{id:"42",name:"Konya"},{id:"43",name:"Kütahya"},{id:"44",name:"Malatya"},{id:"45",name:"Manisa"},{id:"46",name:"Kahramanmaraş"},{id:"47",name:"Mardin"},{id:"48",name:"Muğla"},{id:"49",name:"Muş"},{id:"50",name:"Nevşehir"},{id:"51",name:"Niğde"},{id:"52",name:"Ordu"},{id:"53",name:"Rize"},{id:"54",name:"Sakarya"},{id:"55",name:"Samsun"},{id:"56",name:"Siirt"},{id:"57",name:"Sinop"},{id:"58",name:"Sivas"},{id:"59",name:"Tekirdağ"},{id:"60",name:"Tokat"},{id:"61",name:"Trabzon"},{id:"62",name:"Tunceli"},{id:"63",name:"Şanlıurfa"},{id:"64",name:"Uşak"},{id:"65",name:"Van"},{id:"66",name:"Yozgat"},{id:"67",name:"Zonguldak"},{id:"68",name:"Aksaray"},{id:"69",name:"Bayburt"},{id:"70",name:"Karaman"},{id:"71",name:"Kırıkkale"},{id:"72",name:"Batman"},{id:"73",name:"Şırnak"},{id:"74",name:"Bartın"},{id:"75",name:"Ardahan"},{id:"76",name:"Iğdır"},{id:"77",name:"Yalova"},{id:"78",name:"Karabük"},{id:"79",name:"Kilis"},{id:"80",name:"Osmaniye"},{id:"81",name:"Düzce"}
+];
+
 export default function CreateListingWizard() {
+    const router = useRouter(); // Yönlendirme için eklendi
+
     const [step, setStep] = useState(1);
     const [selectedCat, setSelectedCat] = useState<string | null>(null);
     const [isVerifiedStudent, setIsVerifiedStudent] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
-    // centralized form data state
+    // media upload states
+    const [mediaFiles, setMediaFiles] = useState<File[]>([]);
+    const [mediaPreviews, setMediaPreviews] = useState<{url: string, type: string}[]>([]);
+    const [uploadProgress, setUploadProgress] = useState(0);
+
     const [formData, setFormData] = useState({
         title: '', description: '',
         jobType: '', jobLocationType: '',
         scholarshipDuration: '', scholarshipTarget: '',
         fromLocation: '', toLocation: '', departureTime: '', emptySeats: '',
-        petStatus: '', tutoringSubject: '', tutoringFormat: '',
+        tutoringSubject: '', tutoringFormat: '',
         noteCode: '', noteFormat: '', itemCondition: '',
         price: '', paymentFrequency: 'monthly', exchangeFor: ''
     });
 
+    const [districts, setDistricts] = useState<string[]>([]);
+    const [selectedCityId, setSelectedCityId] = useState('');
     const [city, setCity] = useState('');
     const [district, setDistrict] = useState('');
+
     const [selectedRules, setSelectedRules] = useState<string[]>([]);
     const [isRuleDropdownOpen, setIsRuleDropdownOpen] = useState(false);
     const [isExchangePossible, setIsExchangePossible] = useState(false);
 
-    // dynamic validation checkers
+    useEffect(() => {
+        const checkAuth = async () => {
+            const token = localStorage.getItem('accessToken');
+            if (token) {
+                try {
+                    const userRes = await fetch('http://localhost:5000/api/auth/me', {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    if (userRes.ok) {
+                        const userData = await userRes.json();
+                        setIsVerifiedStudent(!!userData.edu_email);
+                    }
+                } catch (error) {
+                    console.error("Kullanıcı yetki kontrolü başarısız:", error);
+                }
+            }
+        };
+        checkAuth();
+    }, []);
+
+    useEffect(() => {
+        const fetchDistricts = async () => {
+            if (!selectedCityId) {
+                setDistricts([]);
+                return;
+            }
+            try {
+                const res = await fetch(`http://localhost:5000/api/misc/districts/${selectedCityId}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setDistricts(data);
+                }
+            } catch (error) {
+                console.error("İlçeler çekilemedi", error);
+            }
+        };
+
+        fetchDistricts();
+    }, [selectedCityId]);
+
     const isStep2Valid = () => {
         if (!formData.title.trim() || !formData.description.trim()) return false;
-
         switch (selectedCat) {
             case 'job': return formData.jobType && formData.jobLocationType && (formData.jobLocationType !== 'offcampus' || (city && district));
             case 'scholarship': return formData.scholarshipDuration && formData.scholarshipTarget;
             case 'carpool': return formData.fromLocation && formData.toLocation && formData.departureTime && formData.emptySeats;
-            case 'roommate': return city && district && formData.petStatus;
+            case 'roommate': return !!(city && district);
             case 'tutoring': return formData.tutoringSubject && formData.tutoringFormat;
             case 'notes': return formData.noteCode && formData.noteFormat;
             case 'secondhand': return city && district && formData.itemCondition;
@@ -73,7 +121,6 @@ export default function CreateListingWizard() {
         return true;
     };
 
-    // determine if "Next" button should be disabled (maybe temp until we implement better validation)
     const isNextDisabled = () => {
         if (step === 1 && !selectedCat) return true;
         if (step === 2 && !isStep2Valid()) return true;
@@ -88,33 +135,47 @@ export default function CreateListingWizard() {
         setFormData(prev => ({ ...prev, [key]: value }));
     };
 
+    const handleMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files) {
+            const fileArray = Array.from(e.target.files).slice(0, 3); // Maksimum 3 dosya
+            setMediaFiles(fileArray);
+
+            const previews = fileArray.map(file => ({
+                url: URL.createObjectURL(file),
+                type: file.type.startsWith('video/') ? 'video' : 'image'
+            }));
+            setMediaPreviews(previews);
+        }
+    };
+
+    const removeMedia = (index: number) => {
+        setMediaFiles(prev => prev.filter((_, i) => i !== index));
+        setMediaPreviews(prev => prev.filter((_, i) => i !== index));
+    };
+
+    // cloudinary upload ve submit
     const submitListing = async () => {
         setIsSubmitting(true);
         setSubmitStatus('idle');
 
         try {
-            const API_URL = "http://localhost:5000/api/adverts";
+            const submitData = new FormData();
+            submitData.append('category', selectedCat || '');
+            submitData.append('rules', JSON.stringify(selectedRules));
 
-            // change this payload structure according to our backend requirements. Currently, it includes category and all form data in a flat structure.
-            const payload = {
-                category: selectedCat,
-                ...formData
-            };
+            Object.entries(formData).forEach(([k, v]) => submitData.append(k, v));
 
-            const response = await fetch(API_URL, {
+            mediaFiles.forEach(file => submitData.append('media', file));
+
+            const response = await fetch('http://localhost:5000/api/adverts', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    // 'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
                 },
-                body: JSON.stringify(payload)
+                body: submitData
             });
 
-            if (!response.ok) {
-                throw new Error('Listing submission failed');
-            }
-
-            console.log("Listing created successfully");
+            if (!response.ok) throw new Error('Listing submission failed');
             setSubmitStatus('success');
 
         } catch (error) {
@@ -126,7 +187,11 @@ export default function CreateListingWizard() {
     };
 
     const handleCityChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        setCity(e.target.value);
+        const targetId = e.target.value;
+        setSelectedCityId(targetId);
+
+        const cityName = TURKISH_CITIES.find(c => c.id === targetId)?.name || '';
+        setCity(cityName);
         setDistrict('');
     };
 
@@ -139,16 +204,16 @@ export default function CreateListingWizard() {
         <div className="grid grid-cols-2 gap-4 mt-2">
             <div className="space-y-2">
                 <label className={`text-sm font-medium ${accentColor} ml-1`}>İl</label>
-                <select value={city} onChange={handleCityChange} className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 focus:border-white/30 outline-none text-gray-200 appearance-none">
+                <select value={selectedCityId} onChange={handleCityChange} className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 focus:border-white/30 outline-none text-gray-200 appearance-none">
                     <option value="" className="bg-gray-900">İl Seçiniz...</option>
-                    {Object.keys(mockLocations).map(c => <option key={c} value={c} className="bg-gray-900">{c}</option>)}
+                    {TURKISH_CITIES.map(c => <option key={c.id} value={c.id} className="bg-gray-900">{c.name}</option>)}
                 </select>
             </div>
             <div className="space-y-2">
                 <label className={`text-sm font-medium ${accentColor} ml-1`}>İlçe</label>
-                <select value={district} onChange={(e) => setDistrict(e.target.value)} disabled={!city} className={`w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 focus:border-white/30 outline-none ${!city ? 'text-gray-600 opacity-50 cursor-not-allowed' : 'text-gray-200'} appearance-none`}>
+                <select value={district} onChange={(e) => setDistrict(e.target.value)} disabled={!selectedCityId || districts.length === 0} className={`w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 focus:border-white/30 outline-none ${(!selectedCityId || districts.length === 0) ? 'text-gray-600 opacity-50 cursor-not-allowed' : 'text-gray-200'} appearance-none`}>
                     <option value="" className="bg-gray-900">İlçe Seçiniz...</option>
-                    {city && mockLocations[city].map(d => <option key={d} value={d} className="bg-gray-900">{d}</option>)}
+                    {districts.map(dName => <option key={dName} value={dName} className="bg-gray-900">{dName}</option>)}
                 </select>
             </div>
         </div>
@@ -156,21 +221,21 @@ export default function CreateListingWizard() {
 
     const activeCatData = categories.find(c => c.id === selectedCat);
 
+    const availableRules = predefinedRules.filter(rule => !selectedRules.includes(rule));
+
     return (
         <div className="max-w-5xl mx-auto pb-20">
 
-            {/* header */}
             <div className="flex items-center justify-between mb-8">
                 <div>
                     <h1 className="text-3xl font-black text-white tracking-tight">Yeni İlan <span className="text-cyan-400">Oluştur</span></h1>
                     <p className="text-gray-500 mt-1">Sihirbazı kullanarak ilanını saniyeler içinde yayınla.</p>
                 </div>
-                <button onClick={() => setIsVerifiedStudent(!isVerifiedStudent)} className={`px-4 py-2 rounded-full text-xs font-bold border transition-all ${isVerifiedStudent ? 'bg-violet-500/20 text-violet-300 border-violet-500/50 shadow-[0_0_10px_rgba(139,92,246,0.2)]' : 'bg-gray-800 text-gray-400 border-gray-700'}`}>
-                    {isVerifiedStudent ? '🎓 Öğrenci Modu: AÇIK' : '👤 Sivil Modu: AÇIK'}
-                </button>
+                <div className={`px-4 py-2 rounded-full text-xs font-bold border ${isVerifiedStudent ? 'bg-violet-500/20 text-violet-300 border-violet-500/50' : 'bg-gray-800 text-gray-400 border-gray-700'}`}>
+                    {isVerifiedStudent ? '🎓 Onaylı Öğrenci' : '👤 Standart Kullanıcı'}
+                </div>
             </div>
 
-            {/* progress bar (4 steps) */}
             <div className="flex items-center justify-between mb-12 relative">
                 <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-white/5 -z-10 rounded-full"></div>
                 <div className={`absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-cyan-500 shadow-[0_0_10px_#22d3ee] -z-10 rounded-full transition-all duration-500`} style={{ width: `${((step - 1) / 3) * 100}%` }}></div>
@@ -181,10 +246,8 @@ export default function CreateListingWizard() {
                 ))}
             </div>
 
-            {/* wizard content */}
             <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-[2rem] p-8 md:p-12 shadow-2xl min-h-[400px]">
 
-                {/* step 1: categories */}
                 {step === 1 && (
                     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                         <h2 className="text-xl font-bold text-white mb-6">Ne tür bir ilan vermek istiyorsun?</h2>
@@ -193,13 +256,27 @@ export default function CreateListingWizard() {
                                 const isLocked = cat.requiresStudent && !isVerifiedStudent;
                                 const isSelected = selectedCat === cat.id;
                                 return (
-                                    <button key={cat.id} disabled={isLocked} onClick={() => setSelectedCat(cat.id)} className={`relative flex flex-col items-start p-5 rounded-2xl border transition-all duration-300 text-left group ${isLocked ? 'bg-black/20 border-white/5 opacity-50 cursor-not-allowed' : 'cursor-pointer'} ${isSelected ? `bg-white/5 ${cat.border} shadow-[0_0_20px_rgba(255,255,255,0.05)] translate-y-[-4px]` : `bg-black/40 border-white/5 ${cat.bg}`}`}>
+                                    <button
+                                        key={cat.id}
+                                        disabled={isLocked}
+                                        onClick={() => {
+                                            // ACİL İLAN YÖNLENDİRMESİ
+                                            if (cat.id === 'emergency') {
+                                                router.push('/emergencies/create');
+                                            } else {
+                                                setSelectedCat(cat.id);
+                                            }
+                                        }}
+                                        className={`relative flex flex-col items-start p-5 rounded-2xl border transition-all duration-300 text-left group ${isLocked ? 'bg-black/20 border-white/5 opacity-50 cursor-not-allowed' : 'cursor-pointer'} ${isSelected ? `bg-white/5 ${cat.border} shadow-[0_0_20px_rgba(255,255,255,0.05)] translate-y-[-4px]` : `bg-black/40 border-white/5 ${cat.bg}`}`}
+                                    >
                                         <div className={`p-4 rounded-full bg-black/50 ${isLocked ? 'text-gray-600' : cat.color} mb-4`}>
                                             {isLocked ? <Lock size={24} /> : <cat.icon size={24} />}
                                         </div>
                                         <div>
                                             <h3 className={`text-base font-extrabold ${isLocked ? 'text-gray-500' : 'text-gray-200'}`}>{cat.title}</h3>
-                                            <p className="text-[11px] text-gray-500 mt-1">{isLocked ? 'Sadece öğrenciler' : 'Seç'}</p>
+                                            <p className="text-[11px] text-gray-500 mt-1">
+                                                {isLocked ? 'Sadece onaylı öğrenciler' : cat.id === 'emergency' ? 'Anında yayınla' : 'Seç'}
+                                            </p>
                                         </div>
                                         {isSelected && <div className="absolute top-4 right-4 text-cyan-400"><CheckCircle2 size={18} /></div>}
                                     </button>
@@ -209,18 +286,15 @@ export default function CreateListingWizard() {
                     </div>
                 )}
 
-                {/* step 2: dynamic details */}
                 {step === 2 && (
                     <div className="animate-in fade-in slide-in-from-right-8 duration-500 space-y-6">
                         <h2 className="text-xl font-bold text-white mb-6">İlanının detaylarını belirle</h2>
 
-                        {/* title */}
                         <div className="space-y-2">
                             <label className="text-sm font-medium text-gray-400 ml-1">İlan Başlığı <span className="text-rose-500">*</span></label>
                             <input type="text" value={formData.title} onChange={(e) => handleFormChange('title', e.target.value)} placeholder="İlanını özetleyen bir başlık" className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 focus:border-cyan-500/50 outline-none text-gray-200" />
                         </div>
 
-                        {/* category specific blocks */}
                         {selectedCat === 'job' && (
                             <div className="space-y-4 animate-in zoom-in-95 duration-300 border-l-2 border-blue-500 pl-4">
                                 <div className="grid grid-cols-2 gap-4">
@@ -294,14 +368,7 @@ export default function CreateListingWizard() {
                                     <label className="text-sm font-medium text-teal-400 ml-1">Evin Konumu <span className="text-rose-500">*</span></label>
                                     {renderLocationSelector('text-teal-400')}
                                 </div>
-                                <div className="space-y-2">
-                                    <label className="text-sm font-medium text-teal-400 ml-1">Evcil Hayvan <span className="text-rose-500">*</span></label>
-                                    <select value={formData.petStatus} onChange={(e) => handleFormChange('petStatus', e.target.value)} className="w-full bg-teal-500/5 border border-teal-500/20 rounded-xl py-3 px-4 outline-none text-gray-200 appearance-none">
-                                        <option value="" className="bg-gray-900">Seçiniz...</option>
-                                        <option value="Sorun Olmaz / Var" className="bg-gray-900">Sorun Olmaz / Evde Var</option>
-                                        <option value="Tercih Etmiyorum" className="bg-gray-900">Tercih Etmiyorum</option>
-                                    </select>
-                                </div>
+
                                 <div className="space-y-3">
                                     <div className="flex items-center justify-between">
                                         <label className="text-sm font-medium text-teal-400 ml-1">Ev Kuralları / Kriterler</label>
@@ -312,9 +379,13 @@ export default function CreateListingWizard() {
                                             {isRuleDropdownOpen && (
                                                 <div className="absolute right-0 top-full mt-2 w-56 bg-[#121826] border border-white/10 rounded-xl shadow-2xl z-20 overflow-hidden">
                                                     <div className="max-h-48 overflow-y-auto">
-                                                        {predefinedRules.map(rule => (
-                                                            <button key={rule} onClick={() => toggleRule(rule)} className="w-full text-left px-4 py-2.5 text-sm text-gray-300 hover:bg-teal-500/20 hover:text-white transition-colors border-b border-white/5 last:border-0">{rule}</button>
-                                                        ))}
+                                                        {availableRules.length === 0 ? (
+                                                            <div className="px-4 py-3 text-sm text-gray-500 text-center">Tüm kriterleri eklediniz.</div>
+                                                        ) : (
+                                                            availableRules.map(rule => (
+                                                                <button key={rule} onClick={() => toggleRule(rule)} className="w-full text-left px-4 py-2.5 text-sm text-gray-300 hover:bg-teal-500/20 hover:text-white transition-colors border-b border-white/5 last:border-0">{rule}</button>
+                                                            ))
+                                                        )}
                                                     </div>
                                                 </div>
                                             )}
@@ -388,7 +459,6 @@ export default function CreateListingWizard() {
                             </div>
                         )}
 
-                        {/* description (common) */}
                         <div className="space-y-2 pt-4">
                             <label className="text-sm font-medium text-gray-400 ml-1">Açıklama <span className="text-rose-500">*</span></label>
                             <textarea rows={4} value={formData.description} onChange={(e) => handleFormChange('description', e.target.value)} placeholder="Detaylardan bahset..." className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 focus:border-cyan-500/50 outline-none text-gray-200 resize-none"></textarea>
@@ -396,16 +466,48 @@ export default function CreateListingWizard() {
                     </div>
                 )}
 
-                {/* step 3: media and pricing */}
                 {step === 3 && (
                     <div className="animate-in fade-in slide-in-from-right-8 duration-500 space-y-8">
-                        <h2 className="text-xl font-bold text-white mb-2">Görsel ve Fiyatlandırma</h2>
+                        <h2 className="text-xl font-bold text-white mb-2">Medya ve Fiyatlandırma</h2>
 
-                        <div className="w-full border-2 border-dashed border-white/10 hover:border-cyan-500/50 bg-black/20 hover:bg-cyan-500/5 rounded-2xl p-8 flex flex-col items-center justify-center transition-all cursor-pointer group">
-                            <div className="p-4 rounded-full bg-white/5 group-hover:bg-cyan-500/20 text-gray-500 group-hover:text-cyan-400 transition-all mb-4"><ImagePlus size={32} /></div>
-                            <p className="text-white font-bold">Fotoğraf Yükle veya Sürükle</p>
-                            <p className="text-sm text-gray-500 mt-2">Maksimum 3 görsel (PNG, JPG)</p>
-                        </div>
+                        <label className="w-full border-2 border-dashed border-white/10 hover:border-cyan-500/50 bg-black/20 hover:bg-cyan-500/5 rounded-2xl p-8 flex flex-col items-center justify-center transition-all cursor-pointer group">
+                            <input
+                                type="file"
+                                multiple
+                                accept="image/*, video/*"
+                                className="hidden"
+                                onChange={handleMediaUpload}
+                            />
+                            <div className="p-4 rounded-full bg-white/5 group-hover:bg-cyan-500/20 text-gray-500 group-hover:text-cyan-400 transition-all mb-4">
+                                <ImagePlus size={32} />
+                            </div>
+                            <p className="text-white font-bold">Fotoğraf veya Video Yükle</p>
+                            <p className="text-sm text-gray-500 mt-2">Maksimum 3 adet medya (PNG, JPG, MP4)</p>
+                        </label>
+
+                        {mediaPreviews.length > 0 && (
+                            <div className="flex gap-4">
+                                {mediaPreviews.map((preview, idx) => (
+                                    <div key={idx} className="relative w-24 h-24 rounded-xl overflow-hidden border border-white/20 bg-black/50 flex items-center justify-center">
+                                        {preview.type === 'video' ? (
+                                            <>
+                                                <video src={preview.url} className="w-full h-full object-cover opacity-50" />
+                                                <Video className="absolute text-white" size={24} />
+                                            </>
+                                        ) : (
+                                            <img src={preview.url} alt="preview" className="w-full h-full object-cover" />
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={(e) => { e.preventDefault(); removeMedia(idx); }}
+                                            className="absolute top-1 right-1 bg-black/60 text-white p-1 rounded-full hover:bg-rose-500 transition-colors"
+                                        >
+                                            <X size={14} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
 
                         {selectedCat === 'job' ? (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in zoom-in-95">
@@ -457,7 +559,6 @@ export default function CreateListingWizard() {
                     </div>
                 )}
 
-                {/* step 4: preview and publishing */}
                 {step === 4 && activeCatData && (
                     <div className="animate-in fade-in slide-in-from-right-8 duration-500 space-y-6">
                         <div className="flex items-center justify-between mb-6">
@@ -465,13 +566,12 @@ export default function CreateListingWizard() {
                             <span className="text-sm text-gray-500">Kullanıcılar ilanını böyle görecek.</span>
                         </div>
 
-                        {/* mock listing card (maybe temp until we implement better preview)*/}
                         <div className="max-w-2xl mx-auto bg-[#0B0F19] border border-white/10 rounded-3xl overflow-hidden shadow-2xl relative group">
-                            <div className={`absolute top-0 left-0 w-full h-1 bg-${activeCatData.baseColor}-500`}></div>
+                            <div className={`absolute top-0 left-0 w-full h-1 ${activeCatData.previewBg}`}></div>
 
                             <div className="p-6">
                                 <div className="flex justify-between items-start mb-4">
-                                    <div className={`px-3 py-1 rounded-full text-xs font-bold bg-${activeCatData.baseColor}-500/10 text-${activeCatData.baseColor}-400 border border-${activeCatData.baseColor}-500/20 inline-flex items-center gap-2`}>
+                                    <div className={`px-3 py-1 rounded-full text-xs font-bold ${activeCatData.previewPillBg} ${activeCatData.previewText} border ${activeCatData.previewBorder} inline-flex items-center gap-2`}>
                                         <activeCatData.icon size={14} /> {activeCatData.title}
                                     </div>
                                     <div className="text-right">
@@ -483,11 +583,10 @@ export default function CreateListingWizard() {
                                 <h3 className="text-xl font-bold text-gray-100 mb-2">{formData.title}</h3>
                                 <p className="text-sm text-gray-400 mb-6 line-clamp-3 leading-relaxed">{formData.description}</p>
 
-                                {/* dynamic pills for preview */}
                                 <div className="flex flex-wrap gap-2">
                                     {(city || formData.jobLocationType === 'Kampüs İçi' || formData.fromLocation) && (
                                         <div className="px-3 py-1.5 bg-white/5 rounded-lg text-xs text-gray-300 flex items-center gap-1 border border-white/5">
-                                            <MapPin size={12} className={`text-${activeCatData.baseColor}-400`} />
+                                            <MapPin size={12} className={activeCatData.previewText} />
                                             {formData.jobLocationType === 'Kampüs İçi' ? 'Kampüs İçi' : formData.fromLocation ? `${formData.fromLocation} -> ${formData.toLocation}` : `${district}, ${city}`}
                                         </div>
                                     )}
@@ -513,7 +612,6 @@ export default function CreateListingWizard() {
                 )}
             </div>
 
-            {/* nav buttons */}
             <div className="flex items-center justify-between mt-8">
                 <button onClick={prevStep} disabled={step === 1} className={`flex items-center space-x-2 px-6 py-3 rounded-full font-bold transition-all ${step === 1 ? 'opacity-0 pointer-events-none' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
                     <ArrowLeft size={20} /><span>Geri</span>
