@@ -17,11 +17,10 @@ const categories = [
     { id: 'tutoring', title: 'Özel Ders', icon: Presentation, requiresStudent: true, color: 'text-indigo-400', border: 'border-indigo-500/30', bg: 'hover:bg-indigo-500/10', previewBg: 'bg-indigo-500', previewText: 'text-indigo-400', previewPillBg: 'bg-indigo-500/10', previewBorder: 'border-indigo-500/20' },
     { id: 'notes', title: 'Ders Notu', icon: FileText, requiresStudent: true, color: 'text-violet-400', border: 'border-violet-500/30', bg: 'hover:bg-violet-500/10', previewBg: 'bg-violet-500', previewText: 'text-violet-400', previewPillBg: 'bg-violet-500/10', previewBorder: 'border-violet-500/20' },
     { id: 'secondhand', title: 'İkinci El Satış', icon: ShoppingBag, requiresStudent: true, color: 'text-rose-400', border: 'border-rose-500/30', bg: 'hover:bg-rose-500/10', previewBg: 'bg-rose-500', previewText: 'text-rose-400', previewPillBg: 'bg-rose-500/10', previewBorder: 'border-rose-500/20' },
-    // 1. YENİLİK: ACİL İLAN KATEGORİSİ
     { id: 'emergency', title: 'Acil İlan', icon: AlertTriangle, requiresStudent: false, color: 'text-red-500', border: 'border-red-500/50', bg: 'hover:bg-red-500/20 shadow-[0_0_15px_rgba(239,68,68,0.2)]', previewBg: 'bg-red-500', previewText: 'text-red-500', previewPillBg: 'bg-red-500/10', previewBorder: 'border-red-500/20' }
 ];
 
-const predefinedRules = ["Sigara İçilmez", "Sigara İçmeyen Aranıyor", "Evcil Hayvan Yasak", "Evcil Hayvan Dostu", "Sadece Öğrenci", "Sadece Çalışan", "Misafir Yasak", "Düzenli/Temiz", "Vejetaryen/Vegan"];
+const predefinedRules = ["Sigara İçmeyen", "Evcil Hayvan Yasak", "Evcil Hayvan Dostu", "Sadece Öğrenci", "Sadece Çalışan", "Misafir Yasak", "Düzenli/Temiz", "Vejetaryen", "Vegan", "Gürültü Yasak"];
 
 // Türkiye'deki 81 ilin ID ve isimlerini içeren dizi
 const TURKISH_CITIES = [
@@ -29,7 +28,7 @@ const TURKISH_CITIES = [
 ];
 
 export default function CreateListingWizard() {
-    const router = useRouter(); // Yönlendirme için eklendi
+    const router = useRouter();
 
     const [step, setStep] = useState(1);
     const [selectedCat, setSelectedCat] = useState<string | null>(null);

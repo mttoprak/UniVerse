@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { Send, MapPin, Loader2, ArrowLeft, ArrowRight, MoreVertical, Image as ImageIcon, Navigation, Map } from 'lucide-react';
+import { Send, MapPin, Loader2, ArrowLeft, ArrowRight, MoreVertical, Image as ImageIcon, Navigation } from 'lucide-react';
+import { GoogleMap, useJsApiLoader, Marker } from '@react-google-maps/api';
 
 interface Message {
     id: string;
@@ -13,16 +14,41 @@ interface Message {
     timestamp: Date;
 }
 
+// temp
 const CURRENT_USER_ID = "user_123";
 
+const darkMapStyle = [
+    { elementType: "geometry", stylers: [{ color: "#212121" }] },
+    { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+    { elementType: "labels.text.fill", stylers: [{ color: "#757575" }] },
+    { elementType: "labels.text.stroke", stylers: [{ color: "#212121" }] },
+    { featureType: "administrative", elementType: "geometry", stylers: [{ color: "#757575" }] },
+    { featureType: "water", elementType: "geometry", stylers: [{ color: "#0B0F19" }] },
+    { featureType: "road", elementType: "geometry", stylers: [{ color: "#2c2c2c" }] }
+];
+
+const mapContainerStyle = {
+    width: '100%',
+    height: '100%',
+    borderRadius: '0.75rem'
+};
+
 export default function MessagesPage() {
+    // google maps loader
+    const { isLoaded } = useJsApiLoader({
+        id: 'google-map-script',
+        googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ""
+    });
+
     const [socket, setSocket] = useState<Socket | null>(null);
     const [messages, setMessages] = useState<Message[]>([]);
     const [inputText, setInputText] = useState('');
 
     const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
     const [isSendingLocation, setIsSendingLocation] = useState(false);
-    const [manualLocation] = useState({ lat: 38.4237, lng: 27.1428 });
+
+    // default coordinates
+    const [selectedMapLocation, setSelectedMapLocation] = useState({ lat: 38.4237, lng: 27.1428 });
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -76,10 +102,20 @@ export default function MessagesPage() {
         );
     };
 
+    // when click to map, update selected location
+    const handleMapClick = (e: google.maps.MapMouseEvent) => {
+        if (e.latLng) {
+            setSelectedMapLocation({
+                lat: e.latLng.lat(),
+                lng: e.latLng.lng()
+            });
+        }
+    };
+
     return (
         <div className="min-h-screen pt-24 pb-12 px-4 md:px-8 max-w-5xl mx-auto flex flex-col h-screen relative overflow-hidden text-gray-100">
 
-            {/* MODAL: Fixed ve Portal mantığıyla en dışta */}
+            {/* modal */}
             {isLocationModalOpen && (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md transition-all">
                     <div className="bg-[#0B0F19] border border-white/10 rounded-[2.5rem] p-8 w-full max-w-md shadow-[0_0_50px_rgba(0,0,0,0.5)] animate-in zoom-in-95 duration-200">
@@ -90,32 +126,60 @@ export default function MessagesPage() {
                                 type="button"
                                 onClick={shareCurrentLocation}
                                 disabled={isSendingLocation}
-                                className="w-full flex items-center justify-between p-5 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 hover:bg-cyan-500/20 text-cyan-400 transition-all active:scale-[0.98]"
+                                className="w-full flex items-center justify-between p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 hover:bg-cyan-500/20 text-cyan-400 transition-all active:scale-[0.98]"
                             >
-                                <div className="flex items-center gap-4">
-                                    <div className="p-3 bg-cyan-500/20 rounded-xl"><Navigation size={24} /></div>
-                                    <span className="font-bold text-lg">Mevcut Konum</span>
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-cyan-500/20 rounded-xl"><Navigation size={20} /></div>
+                                    <span className="font-bold text-base">Mevcut Konum</span>
                                 </div>
                                 {isSendingLocation ? <Loader2 className="animate-spin" /> : <ArrowRight />}
                             </button>
 
+                            <div className="flex items-center gap-4 py-1">
+                                <div className="flex-1 h-px bg-white/10"></div>
+                                <span className="text-xs text-gray-500 font-medium">VEYA HARİTADAN SEÇ</span>
+                                <div className="flex-1 h-px bg-white/10"></div>
+                            </div>
+
+                            <div className="w-full h-48 bg-gray-900 rounded-xl overflow-hidden relative border border-white/10">
+                                {isLoaded ? (
+                                    <GoogleMap
+                                        mapContainerStyle={mapContainerStyle}
+                                        center={selectedMapLocation}
+                                        zoom={14}
+                                        onClick={handleMapClick}
+                                        options={{
+                                            disableDefaultUI: true,
+                                            zoomControl: true,
+                                            styles: darkMapStyle
+                                        }}
+                                    >
+                                        <Marker position={selectedMapLocation} />
+                                    </GoogleMap>
+                                ) : (
+                                    <div className="flex w-full h-full items-center justify-center text-rose-500">
+                                        <Loader2 className="animate-spin" size={32} />
+                                    </div>
+                                )}
+                            </div>
+
                             <button
                                 type="button"
-                                onClick={() => sendLocationMessage(manualLocation.lat, manualLocation.lng)}
-                                className="w-full flex items-center justify-between p-5 rounded-2xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 text-rose-400 transition-all active:scale-[0.98]"
+                                onClick={() => {
+                                    setIsSendingLocation(true);
+                                    sendLocationMessage(selectedMapLocation.lat, selectedMapLocation.lng);
+                                }}
+                                disabled={!isLoaded || isSendingLocation}
+                                className="w-full flex items-center justify-center p-4 rounded-2xl bg-rose-500 hover:bg-rose-600 text-white font-bold transition-all active:scale-[0.98] shadow-[0_0_15px_rgba(244,63,94,0.3)] disabled:opacity-50"
                             >
-                                <div className="flex items-center gap-4">
-                                    <div className="p-3 bg-rose-500/20 rounded-xl"><Map size={24} /></div>
-                                    <span className="font-bold text-lg">Haritadan Seç</span>
-                                </div>
-                                <ArrowRight />
+                                {isSendingLocation ? <Loader2 className="animate-spin" /> : 'İşaretli Konumu Gönder'}
                             </button>
                         </div>
 
                         <button
                             type="button"
                             onClick={() => setIsLocationModalOpen(false)}
-                            className="mt-8 w-full py-3 text-gray-500 hover:text-white font-medium transition-colors"
+                            className="mt-6 w-full py-2 text-gray-500 hover:text-white font-medium transition-colors"
                         >
                             Vazgeç
                         </button>
@@ -123,7 +187,7 @@ export default function MessagesPage() {
                 </div>
             )}
 
-            {/* Header */}
+            {/* header */}
             <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-t-3xl p-5 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     <ArrowLeft className="text-gray-400 cursor-pointer hover:text-white" />
@@ -138,7 +202,7 @@ export default function MessagesPage() {
                 <MoreVertical className="text-gray-500" />
             </div>
 
-            {/* Chat Area */}
+            {/* chat area */}
             <div className="flex-1 bg-black/20 border-x border-white/10 p-6 overflow-y-auto space-y-4 scrollbar-hide">
                 {messages.map((msg) => {
                     const isMe = msg.senderId === CURRENT_USER_ID;
@@ -149,9 +213,9 @@ export default function MessagesPage() {
                                 {msg.type === 'location' && msg.location && (
                                     <a href={`https://www.google.com/maps?q=${msg.location.lat},${msg.location.lng}`} target="_blank" className="block space-y-3 group">
                                         <div className="flex items-center gap-2"><MapPin size={16} className="text-rose-400" /> <span className="font-bold text-xs uppercase tracking-wider">Konum Paylaşıldı</span></div>
-                                        <div className="w-full h-32 rounded-xl bg-gray-900 overflow-hidden relative border border-white/10">
-                                            <div className="absolute inset-0 bg-cyan-500/10 mix-blend-overlay group-hover:bg-transparent transition-all" />
-                                            <div className="w-full h-full flex items-center justify-center"><MapPin className="text-rose-500 drop-shadow-[0_0_8px_rgba(244,63,94,0.6)]" size={32} /></div>
+                                        <div className="w-full h-32 rounded-xl bg-gray-900 overflow-hidden relative border border-white/10 flex items-center justify-center">
+                                            <div className={`absolute inset-0 bg-[url('https://maps.googleapis.com/maps/api/staticmap?center=${msg.location.lat},${msg.location.lng}&zoom=14&size=400x400&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''}')] bg-cover opacity-50 mix-blend-luminosity group-hover:opacity-80 transition-opacity`}></div>
+                                            <MapPin className="text-rose-500 drop-shadow-[0_0_8px_rgba(244,63,94,0.6)] z-10" size={32} />
                                         </div>
                                     </a>
                                 )}
@@ -163,11 +227,11 @@ export default function MessagesPage() {
                 <div ref={messagesEndRef} />
             </div>
 
-            {/* Bottom Input Area */}
+            {/* bottom input area */}
             <div className="bg-black/60 backdrop-blur-2xl border border-white/10 rounded-b-3xl p-4">
                 <div className="flex items-end gap-3">
 
-                    {/* KRİTİK DEĞİŞİKLİK: Form dışında onPointerDown ile tetikleme */}
+                    {/* button that opens modal */}
                     <button
                         type="button"
                         onPointerDown={(e) => {
