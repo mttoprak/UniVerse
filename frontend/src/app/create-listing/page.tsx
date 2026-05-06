@@ -35,11 +35,11 @@ export default function CreateListingWizard() {
     const [isVerifiedStudent, setIsVerifiedStudent] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
+    const [submitError, setSubmitError] = useState<string | null>(null);
 
     // media upload states
     const [mediaFiles, setMediaFiles] = useState<File[]>([]);
     const [mediaPreviews, setMediaPreviews] = useState<{url: string, type: string}[]>([]);
-    const [uploadProgress, setUploadProgress] = useState(0);
 
     const [formData, setFormData] = useState({
         title: '', description: '',
@@ -60,21 +60,36 @@ export default function CreateListingWizard() {
     const [isRuleDropdownOpen, setIsRuleDropdownOpen] = useState(false);
     const [isExchangePossible, setIsExchangePossible] = useState(false);
 
+    // AKILLI AUTH KONTROLÜ
     useEffect(() => {
         const checkAuth = async () => {
             const token = localStorage.getItem('accessToken');
-            if (token) {
-                try {
-                    const userRes = await fetch('http://localhost:5000/api/auth/me', {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    if (userRes.ok) {
-                        const userData = await userRes.json();
-                        setIsVerifiedStudent(!!userData.edu_email);
+            if (!token) return;
+
+            try {
+                // Mehmet dokümanda POST yazmış ama standartlarda GET kullanılır. Eğer 404 alıyorsa sorun bundandır.
+                const userRes = await fetch('http://localhost:5000/api/auth/me', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
                     }
-                } catch (error) {
-                    console.error("Kullanıcı yetki kontrolü başarısız:", error);
+                });
+
+                const text = await userRes.text(); // JSON yerine saf metni çekiyoruz
+
+                try {
+                    const data = JSON.parse(text); // Json parse etmeyi dene
+                    if (userRes.ok) {
+                        const userData = data.user || data;
+                        console.log("Giriş Yapan Kullanıcı: ", userData);
+                        setIsVerifiedStudent(userData.account_type === 'student' || !!userData.edu_email);
+                    }
+                } catch (e) {
+                    console.error("Auth Hata: JSON gelmedi. HTML Çıktısı:", text.substring(0, 150));
                 }
+            } catch (error) {
+                console.error("Bağlantı hatası:", error);
             }
         };
         checkAuth();
@@ -110,6 +125,7 @@ export default function CreateListingWizard() {
             case 'tutoring': return formData.tutoringSubject && formData.tutoringFormat;
             case 'notes': return formData.noteCode && formData.noteFormat;
             case 'secondhand': return city && district && formData.itemCondition;
+            case 'emergency': return true;
             default: return false;
         }
     };
@@ -136,7 +152,7 @@ export default function CreateListingWizard() {
 
     const handleMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files) {
-            const fileArray = Array.from(e.target.files).slice(0, 3); // Maksimum 3 dosya
+            const fileArray = Array.from(e.target.files).slice(0, 3);
             setMediaFiles(fileArray);
 
             const previews = fileArray.map(file => ({
@@ -152,33 +168,101 @@ export default function CreateListingWizard() {
         setMediaPreviews(prev => prev.filter((_, i) => i !== index));
     };
 
-    // cloudinary upload ve submit
+    // AKILLI İLAN YÜKLEME SİSTEMİ
     const submitListing = async () => {
         setIsSubmitting(true);
         setSubmitStatus('idle');
+        setSubmitError(null);
 
         try {
+            const token = localStorage.getItem('accessToken');
+            if (!token) throw new Error('Oturum bulunamadı. Lütfen giriş yapın.');
+
             const submitData = new FormData();
+
+            let backendType = selectedCat;
+            if (selectedCat === 'carpool') backendType = 'carpooling';
+            if (selectedCat === 'tutoring' || selectedCat === 'notes') backendType = 'course';
+            if (selectedCat === 'emergency') backendType = 'secondhand';
+
+            submitData.append('type', backendType || 'secondhand');
+            submitData.append('title', formData.title);
+            submitData.append('description', formData.description);
+            submitData.append('price', formData.price || '0');
             submitData.append('category', selectedCat || '');
+
+            if (selectedCat === 'emergency') {
+                submitData.append('is_urgent', 'true');
+            }
+
+            let finalLocation = '';
+            if (city && district) {
+                finalLocation = `${district}, ${city}`;
+            } else if (formData.fromLocation && formData.toLocation) {
+                finalLocation = `${formData.fromLocation} -> ${formData.toLocation}`;
+            } else if (formData.jobLocationType === 'Kampüs İçi') {
+                finalLocation = 'Kampüs İçi';
+            }
+            if (finalLocation) submitData.append('location', finalLocation);
+
+            if (formData.itemCondition) {
+                const conditionMap: { [key: string]: string } = {
+                    'Sıfır': 'new', 'Yeni Gibi': 'like_new', 'Kullanılmış': 'good', 'Hasarlı': 'fair'
+                };
+                submitData.append('condition', conditionMap[formData.itemCondition] || formData.itemCondition);
+            }
+
             submitData.append('rules', JSON.stringify(selectedRules));
+            if (isExchangePossible) submitData.append('exchangeFor', formData.exchangeFor);
+            if (formData.departureTime) submitData.append('departureTime', formData.departureTime);
+            if (formData.emptySeats) submitData.append('emptySeats', formData.emptySeats);
 
-            Object.entries(formData).forEach(([k, v]) => submitData.append(k, v));
+            mediaFiles.forEach(file => {
+                submitData.append('photos', file);
+            });
 
-            mediaFiles.forEach(file => submitData.append('media', file));
-
-            const response = await fetch('http://localhost:5000/api/adverts', {
+            // Mehmet'in HTTP isteğinde yazdığı "/api/listing" (tekil) URL'ini kullanıyoruz:
+            const response = await fetch('http://localhost:5000/api/listings', {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+                    'Authorization': `Bearer ${token}`
                 },
                 body: submitData
             });
 
-            if (!response.ok) throw new Error('Listing submission failed');
+            // JSON YERİNE HTML GELİRSE YAKALAYALIM
+            const text = await response.text();
+
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                // Eğer JSON'a çevrilemiyorsa HTML sayfası gelmiştir. İçinden Hatayı (Örn: Cannot POST /api/...) cımbızlayalım
+                let extractedError = "Bilinmeyen Sunucu Hatası";
+                if (text.includes("Cannot POST")) {
+                    const match = text.match(/Cannot POST \/[a-zA-Z0-9/_-]+/);
+                    if (match) extractedError = match[0];
+                } else if (text.includes("<title>")) {
+                    const match = text.match(/<title>(.*?)<\/title>/);
+                    if (match) extractedError = match[1];
+                }
+
+                throw new Error(`Yanlış Endpoint: ${extractedError}`);
+            }
+
+            if (!response.ok) {
+                throw new Error(data.message || data.error || 'İlan oluşturulurken hata oluştu.');
+            }
+
             setSubmitStatus('success');
 
-        } catch (error) {
-            console.error("Error submitting listing:", error);
+            setTimeout(() => {
+                router.push('/feed');
+            }, 2000);
+
+        } catch (error: any) {
+            console.error("İlan gönderme hatası:", error);
+            setSubmitError(error.message);
             setSubmitStatus('error');
         } finally {
             setIsSubmitting(false);
@@ -219,7 +303,6 @@ export default function CreateListingWizard() {
     );
 
     const activeCatData = categories.find(c => c.id === selectedCat);
-
     const availableRules = predefinedRules.filter(rule => !selectedRules.includes(rule));
 
     return (
@@ -230,10 +313,17 @@ export default function CreateListingWizard() {
                     <h1 className="text-3xl font-black text-white tracking-tight">Yeni İlan <span className="text-cyan-400">Oluştur</span></h1>
                     <p className="text-gray-500 mt-1">Sihirbazı kullanarak ilanını saniyeler içinde yayınla.</p>
                 </div>
-                <div className={`px-4 py-2 rounded-full text-xs font-bold border ${isVerifiedStudent ? 'bg-violet-500/20 text-violet-300 border-violet-500/50' : 'bg-gray-800 text-gray-400 border-gray-700'}`}>
+                <div className={`px-4 py-2 rounded-full text-xs font-bold border transition-colors duration-500 ${isVerifiedStudent ? 'bg-violet-500/20 text-violet-300 border-violet-500/50' : 'bg-gray-800 text-gray-400 border-gray-700'}`}>
                     {isVerifiedStudent ? '🎓 Onaylı Öğrenci' : '👤 Standart Kullanıcı'}
                 </div>
             </div>
+
+            {submitError && (
+                <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-center space-x-3 text-rose-400 text-sm animate-pulse">
+                    <AlertTriangle size={20} className="flex-shrink-0" />
+                    <span>{submitError}</span>
+                </div>
+            )}
 
             <div className="flex items-center justify-between mb-12 relative">
                 <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-white/5 -z-10 rounded-full"></div>
@@ -258,14 +348,7 @@ export default function CreateListingWizard() {
                                     <button
                                         key={cat.id}
                                         disabled={isLocked}
-                                        onClick={() => {
-                                            // ACİL İLAN YÖNLENDİRMESİ
-                                            if (cat.id === 'emergency') {
-                                                router.push('/emergencies/create');
-                                            } else {
-                                                setSelectedCat(cat.id);
-                                            }
-                                        }}
+                                        onClick={() => setSelectedCat(cat.id)}
                                         className={`relative flex flex-col items-start p-5 rounded-2xl border transition-all duration-300 text-left group ${isLocked ? 'bg-black/20 border-white/5 opacity-50 cursor-not-allowed' : 'cursor-pointer'} ${isSelected ? `bg-white/5 ${cat.border} shadow-[0_0_20px_rgba(255,255,255,0.05)] translate-y-[-4px]` : `bg-black/40 border-white/5 ${cat.bg}`}`}
                                     >
                                         <div className={`p-4 rounded-full bg-black/50 ${isLocked ? 'text-gray-600' : cat.color} mb-4`}>
@@ -274,7 +357,7 @@ export default function CreateListingWizard() {
                                         <div>
                                             <h3 className={`text-base font-extrabold ${isLocked ? 'text-gray-500' : 'text-gray-200'}`}>{cat.title}</h3>
                                             <p className="text-[11px] text-gray-500 mt-1">
-                                                {isLocked ? 'Sadece onaylı öğrenciler' : cat.id === 'emergency' ? 'Anında yayınla' : 'Seç'}
+                                                {isLocked ? 'Sadece onaylı öğrenciler' : cat.id === 'emergency' ? 'Acil yardım çağrısı' : 'Seç'}
                                             </p>
                                         </div>
                                         {isSelected && <div className="absolute top-4 right-4 text-cyan-400"><CheckCircle2 size={18} /></div>}
@@ -626,7 +709,7 @@ export default function CreateListingWizard() {
                                 : 'bg-cyan-500 hover:bg-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.3)] hover:shadow-[0_0_30px_rgba(34,211,238,0.5)]'}`}>
                     <span>
                       {isSubmitting ? 'Yayınlanıyor...' :
-                          submitStatus === 'success' ? 'İlanınız Başarıyla Yayınlandı!' : step === 3 ? 'Önizlemeyi Gör' : step === 4 ? 'YAYINLA' : 'Devam Et'}
+                          submitStatus === 'success' ? 'Başarıyla Yayınlandı!' : step === 3 ? 'Önizlemeyi Gör' : step === 4 ? 'YAYINLA' : 'Devam Et'}
                     </span>
                     {step !== 4 && <ArrowRight size={20} />}
                 </button>
