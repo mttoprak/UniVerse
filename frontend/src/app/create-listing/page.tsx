@@ -221,7 +221,6 @@ export default function CreateListingWizard() {
                 submitData.append('photos', file);
             });
 
-            // Mehmet'in HTTP isteğinde yazdığı "/api/listing" (tekil) URL'ini kullanıyoruz:
             const response = await fetch('http://localhost:5000/api/listings', {
                 method: 'POST',
                 headers: {
@@ -237,7 +236,6 @@ export default function CreateListingWizard() {
             try {
                 data = JSON.parse(text);
             } catch (e) {
-                // Eğer JSON'a çevrilemiyorsa HTML sayfası gelmiştir. İçinden Hatayı (Örn: Cannot POST /api/...) cımbızlayalım
                 let extractedError = "Bilinmeyen Sunucu Hatası";
                 if (text.includes("Cannot POST")) {
                     const match = text.match(/Cannot POST \/[a-zA-Z0-9/_-]+/);

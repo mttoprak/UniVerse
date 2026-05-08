@@ -3,31 +3,54 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ChevronLeft, Heart, Share2, MessageSquare, MapPin, Calendar, User, ShieldCheck, Tag, Info, Loader2, AlertCircle } from 'lucide-react';
+import { ChevronLeft, Heart, Share2, MessageSquare, MapPin, Calendar, User, ShieldCheck, Tag, Info, Loader2, Eye, AlertTriangle } from 'lucide-react';
+
+// --- BACKEND ÇÖKERSE VEYA İLAN YOKSA GÖSTERİLECEK MOCK DATA ---
+const MOCK_AD = {
+    _id: "mock-123",
+    title: "Test İlanı",
+    description: "⚠️ DİKKAT: Bu bir test ilanıdır. Sunucuya bağlanılamadığı için örnek veri gösteriliyor.\n\nKlavye 3 ay kullanıldı, tüm tuşları ve RGB ışıkları sorunsuz çalışıyor. Yeni modele geçtiğim için satıyorum. Kutusu ve faturası tam. Sadece elden teslim.",
+    price: 1250,
+    category: "Elektronik",
+    type: "secondhand",
+    location: "Merkez Kampüs",
+    condition: "Yeni Gibi",
+    createdAt: new Date().toISOString(),
+    views: 1337,
+    photos: [
+        "https://images.unsplash.com/photo-1595225476474-87563907a212?w=800&q=80",
+        "https://images.unsplash.com/photo-1511556820780-d912e42b4980?w=800&q=80"
+    ],
+    seller: {
+        username: "ahmetemingenc",
+        edu_email: "ahmet@ogr.university.edu.tr",
+        university: "Ege üniversitesi",
+        profile_photo: ""
+    }
+};
 
 export default function AdDetailPage() {
     const params = useParams();
     const id = params.id;
 
-    // State Management for Data, Loading, and Errors
+    // State Management for Data and Loading
     const [ad, setAd] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    const [isMockData, setIsMockData] = useState(false); // Yeni state!
 
     // UI States
     const [isFavorite, setIsFavorite] = useState(false);
     const [activeImage, setActiveImage] = useState(0);
 
-    // Fetch ad details when the component mounts or ID changes
     useEffect(() => {
         const fetchAdDetails = async () => {
             if (!id) return;
 
             try {
                 setIsLoading(true);
-                setError(null);
+                setIsMockData(false);
 
-                const response = await fetch(`http://localhost:5000/api/adverts/${id}`, {
+                const response = await fetch(`http://localhost:5000/api/listing/${id}`, {
                     method: 'GET',
                     headers: { 'Content-Type': 'application/json' }
                 });
@@ -35,12 +58,15 @@ export default function AdDetailPage() {
                 const data = await response.json();
 
                 if (!response.ok) {
-                    throw new Error(data.message || 'İlan bulunamadı veya silinmiş olabilir.');
+                    throw new Error(data.message || 'İlan bulunamadı.');
                 }
 
-                setAd(data);
+                setAd(data.listing);
             } catch (err: any) {
-                setError(err.message);
+                console.warn("Backend hatası yakalandı. Mock Data yükleniyor...", err);
+                // Hata ekranı göstermek yerine MOCK datayı basıyoruz!
+                setAd(MOCK_AD);
+                setIsMockData(true);
             } finally {
                 setIsLoading(false);
             }
@@ -59,29 +85,27 @@ export default function AdDetailPage() {
         );
     }
 
-    // Error State UI (If ad is not found or server is down)
-    if (error || !ad) {
-        return (
-            <div className="min-h-screen pt-28 px-4 flex flex-col items-center justify-center">
-                <div className="bg-rose-500/10 border border-rose-500/30 p-8 rounded-3xl max-w-md text-center">
-                    <AlertCircle className="w-16 h-16 text-rose-500 mx-auto mb-4" />
-                    <h2 className="text-2xl font-black text-white mb-2">Hata Oluştu</h2>
-                    <p className="text-rose-400 text-sm mb-6">{error || 'İlan bulunamadı.'}</p>
-                    <Link href="/listings" className="inline-block px-6 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold transition-colors">
-                        İlanlara Dön
-                    </Link>
-                </div>
-            </div>
-        );
-    }
+    // Güvenlik kontrolü (Mock data bile yüklenemezse diye)
+    if (!ad) return null;
 
-    // Default image if backend sends an empty array or no images
-    const displayImages = ad.images && ad.images.length > 0
-        ? ad.images
-        : ["https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&q=80"]; // Placeholder fallback
+    const displayImages = ad.photos && ad.photos.length > 0
+        ? ad.photos
+        : ad.images && ad.images.length > 0
+            ? ad.images
+            : ["https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&q=80"];
+
+    const seller = ad.owner || ad.seller;
 
     return (
-        <div className="min-h-screen pt-28 pb-12 px-4">
+        <div className="min-h-screen pt-28 pb-12 px-4 relative">
+
+            {/* MOCK DATA UYARI BANNER'I */}
+            {isMockData && (
+                <div className="absolute top-20 left-0 w-full bg-amber-500/20 border-b border-amber-500/50 py-2 z-40 flex items-center justify-center gap-2 backdrop-blur-md">
+                    <AlertTriangle size={16} className="text-amber-500" />
+                    <span className="text-amber-400 text-xs font-bold uppercase tracking-widest">Bağlantı Hatası: Şu an sahte (mock) ilan verisi görüntülüyorsunuz.</span>
+                </div>
+            )}
 
             {/* Background Ambient Glow Effects */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10">
@@ -89,11 +113,11 @@ export default function AdDetailPage() {
                 <div className="absolute bottom-0 left-1/4 w-96 h-96 bg-emerald-500/10 blur-[150px] rounded-full mix-blend-screen"></div>
             </div>
 
-            <div className="max-w-6xl mx-auto">
+            <div className="max-w-6xl mx-auto mt-4">
 
                 {/* Top Navigation Bar - Back & Actions */}
                 <div className="flex items-center justify-between mb-8">
-                    <Link href="/listings" className="flex items-center space-x-2 text-gray-400 hover:text-cyan-400 transition-colors group">
+                    <Link href="/feed" className="flex items-center space-x-2 text-gray-400 hover:text-cyan-400 transition-colors group">
                         <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center group-hover:border-cyan-500/50 transition-colors">
                             <ChevronLeft size={18} />
                         </div>
@@ -167,15 +191,22 @@ export default function AdDetailPage() {
 
                             {/* Header & Price */}
                             <div className="mb-6">
-                                <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-[10px] font-black uppercase tracking-widest mb-4">
-                                    <Tag size={12} />
-                                    <span>{ad.category || 'Diğer'}</span>
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-[10px] font-black uppercase tracking-widest">
+                                        <Tag size={12} />
+                                        <span>{ad.category || ad.type || 'Diğer'}</span>
+                                    </div>
+
+                                    <div className="flex items-center space-x-1.5 text-gray-500 text-xs font-bold" title="Görüntülenme">
+                                        <Eye size={14} />
+                                        <span>{ad.views || 1}</span>
+                                    </div>
                                 </div>
+
                                 <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight leading-tight mb-4">
                                     {ad.title}
                                 </h1>
                                 <div className="text-4xl font-black text-emerald-400 tracking-tighter">
-                                    {/* Format the price safely */}
                                     {ad.price ? `${ad.price.toLocaleString('tr-TR')} ₺` : 'Fiyat Belirtilmemiş'}
                                 </div>
                             </div>
@@ -184,39 +215,43 @@ export default function AdDetailPage() {
                             <div className="space-y-4 mb-8 pt-6 border-t border-white/10">
                                 <div className="flex items-center text-sm text-gray-400">
                                     <MapPin size={16} className="mr-3 text-gray-500" />
-                                    <span className="font-medium">{ad.location || 'Kampüs İçi'}</span>
+                                    <span className="font-medium">{ad.location || 'Konum Belirtilmemiş'}</span>
                                 </div>
                                 <div className="flex items-center text-sm text-gray-400">
                                     <Calendar size={16} className="mr-3 text-gray-500" />
                                     <span className="font-medium">
-                                        {/* Simple date formatting if backend sends an ISO string */}
                                         {ad.createdAt ? new Date(ad.createdAt).toLocaleDateString('tr-TR') : 'Tarih Yok'}
                                     </span>
                                 </div>
-                                <div className="flex items-center text-sm text-gray-400">
-                                    <ShieldCheck size={16} className="mr-3 text-gray-500" />
-                                    <span className="font-medium">{ad.condition || 'Belirtilmemiş'}</span>
-                                </div>
+                                {ad.condition && (
+                                    <div className="flex items-center text-sm text-gray-400">
+                                        <ShieldCheck size={16} className="mr-3 text-gray-500" />
+                                        <span className="font-medium">{ad.condition}</span>
+                                    </div>
+                                )}
                             </div>
 
-                            {/* Seller Summary Card - Safety check for nested objects */}
-                            {ad.seller && (
+                            {/* Seller Summary Card */}
+                            {seller && (
                                 <div className="bg-white/5 border border-white/10 rounded-2xl p-4 mb-6 flex items-center space-x-4">
-                                    <div className="w-12 h-12 rounded-full bg-cyan-500/20 border border-cyan-500/50 flex items-center justify-center flex-shrink-0">
-                                        <User size={20} className="text-cyan-400" />
+                                    <div className="w-12 h-12 rounded-full overflow-hidden bg-cyan-500/20 border border-cyan-500/50 flex items-center justify-center flex-shrink-0">
+                                        {seller.avatar || seller.profile_photo ? (
+                                            <img src={seller.avatar || seller.profile_photo} alt={seller.username} className="w-full h-full object-cover" />
+                                        ) : (
+                                            <User size={20} className="text-cyan-400" />
+                                        )}
                                     </div>
                                     <div>
                                         <div className="flex items-center space-x-2">
-                                            <h4 className="text-white font-bold text-sm">@{ad.seller.username}</h4>
-                                            {/* Only render this if the seller actually verified an edu mail */}
-                                            {ad.seller.edu_email && (
+                                            <h4 className="text-white font-bold text-sm">@{seller.username || 'Kullanıcı'}</h4>
+                                            {seller.edu_email && (
                                                 <span className="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 text-[8px] font-black uppercase tracking-wider">
                                                     Onaylı Öğrenci
                                                 </span>
                                             )}
                                         </div>
-                                        {ad.seller.university && (
-                                            <p className="text-xs text-gray-500 mt-0.5">{ad.seller.university}</p>
+                                        {seller.university && (
+                                            <p className="text-xs text-gray-500 mt-0.5">{seller.university}</p>
                                         )}
                                     </div>
                                 </div>
