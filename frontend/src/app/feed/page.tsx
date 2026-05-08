@@ -59,7 +59,7 @@ export default function FeedPage() {
                 if (minPrice) queryParams.append('min_price', minPrice);
                 if (maxPrice) queryParams.append('max_price', maxPrice);
 
-                const API_URL = `http://localhost:5000/api/adverts?${queryParams.toString()}`;
+                const API_URL = `http://localhost:5000/api/listings`;
                 const response = await fetch(API_URL);
 
                 if (!response.ok) {

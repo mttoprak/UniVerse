@@ -221,7 +221,6 @@ export default function CreateListingWizard() {
                 submitData.append('photos', file);
             });
 
-            // Mehmet'in HTTP isteğinde yazdığı "/api/listing" (tekil) URL'ini kullanıyoruz:
             const response = await fetch('http://localhost:5000/api/listings', {
                 method: 'POST',
                 headers: {
