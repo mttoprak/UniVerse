@@ -26,14 +26,9 @@ export const register = async (req: Request, res: Response) => {
             return res.status(400).json({error: "There is no verification"})
         }
 
-        const comparization = await bcrypt.compare(code, verification.code);
-
+        const comparization = bcrypt.compare(code, verification.code);
         if (!comparization) {
-            if(process.env.DEVPROCESS == "true" && code==="000000") {
-                // We skip the verification process for development purposes
-            } else {
-                return res.status(400).json({error: "Wrong verification code"});
-            }
+            return res.status(400).json({error: "Wrong verification code"})
         }
 
 

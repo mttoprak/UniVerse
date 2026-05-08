@@ -10,8 +10,8 @@ interface Advert {
     price: string;
     category: string;
     location: string;
-    time: string; // createdAt date
-    imageUrl?: string;
+    createdAt: string;
+    photos?: string;
 }
 
 export default function FeedPage() {
@@ -42,6 +42,7 @@ export default function FeedPage() {
         );
     };
 
+
     // 3. fetch adverts from backend
     useEffect(() => {
         const fetchAdverts = async () => {
@@ -59,7 +60,7 @@ export default function FeedPage() {
                 if (minPrice) queryParams.append('min_price', minPrice);
                 if (maxPrice) queryParams.append('max_price', maxPrice);
 
-                const API_URL = `http://localhost:5000/api/adverts?${queryParams.toString()}`;
+                const API_URL = `http://localhost:5000/api/listing/feed`;
                 const response = await fetch(API_URL);
 
                 if (!response.ok) {
@@ -67,16 +68,16 @@ export default function FeedPage() {
                 }
 
                 const data = await response.json();
-                setAdverts(data);
+                setAdverts(data.listings || []);
             } catch (err) {
                 console.error("Error fetching data:", err);
                 setError("İlanlar yüklenirken bir hata oluştu.");
 
                 // fallback mock data if backend is not ready yet
                 setAdverts([
-                    { _id: '1', title: "Matematik 1 Notları (Tüm Dönem)", price: "₺150", category: "Notlar", location: "Mühendislik Fakültesi", time: "2 saat önce", imageUrl: "https://images.unsplash.com/photo-1517842645767-c639042777db?auto=format&fit=crop&w=500&q=60" },
-                    { _id: '2', title: "MacBook Air M1 (Sıfıra Yakın)", price: "₺18000", category: "İkinci El", location: "Merkez Kütüphane", time: "2 gün önce", imageUrl: "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=500&q=60" },
-                    { _id: '3', title: "Cuma günü İstanbul'a Yol Arkadaşı", price: "₺400", category: "Yol Arkadaşı", location: "Kampüs Ana Giriş", time: "5 saat önce" }
+                    { _id: '1', title: "Matematik 1 Notları (Tüm Dönem)", price: "₺150", category: "Notlar", location: "Mühendislik Fakültesi", createdAt: "2 saat önce", photos: "https://images.unsplash.com/photo-1517842645767-c639042777db?auto=format&fit=crop&w=500&q=60" },
+                    { _id: '2', title: "MacBook Air M1 (Sıfıra Yakın)", price: "₺18000", category: "İkinci El", location: "Merkez Kütüphane", createdAt: "2 gün önce", photos: "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=500&q=60" },
+                    { _id: '3', title: "Cuma günü İstanbul'a Yol Arkadaşı", price: "₺400", category: "Yol Arkadaşı", location: "Kampüs Ana Giriş", createdAt: "5 saat önce" }
                 ]);
             } finally {
                 setIsLoading(false);
@@ -221,9 +222,9 @@ export default function FeedPage() {
 
                                 {/* image container */}
                                 <div className="w-full h-48 bg-black/40 relative overflow-hidden flex items-center justify-center border-b border-white/5">
-                                    {advert.imageUrl ? (
+                                    {advert.photos ? (
                                         <img
-                                            src={advert.imageUrl}
+                                            src={advert.photos[0]}
                                             alt={advert.title}
                                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                                         />
@@ -262,7 +263,7 @@ export default function FeedPage() {
                                         </div>
                                         <div className="flex items-center text-gray-500 text-xs">
                                             <Clock size={14} className="mr-1.5" />
-                                            <span>{advert.time}</span>
+                                            <span>{advert.createdAt}</span>
                                         </div>
                                     </div>
                                 </div>
