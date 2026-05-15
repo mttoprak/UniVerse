@@ -35,8 +35,15 @@ export const createListing = async (req: Request, res: Response): Promise<any> =
             photos = uploaded.map(f => f.url)
         }
 
+        let expiresDate = undefined;
+        if (parsed.data.is_urgent && parsed.data.expires) {
+            expiresDate = new Date();
+            expiresDate.setHours(expiresDate.getHours() + parsed.data.expires);
+        }
+
         const listing = await Listing.create({
             ...parsed.data,
+            expires: expiresDate,
             photos,
             owner: req.userId,
         })
@@ -119,11 +126,11 @@ export const getFeedListings = async (req: Request, res: Response): Promise<any>
         const limitNum = Math.max(1, Number(limit) || 20)
 
         const listings = await Listing
-            .find({ status: 'active' })
-            .sort({ is_urgent: -1, createdAt: -1 }) // urgent'lar üste
+            .find({ status: 'active', is_urgent: false })
+            .sort({ createdAt: -1 })
             .skip((pageNum - 1) * limitNum)
             .limit(limitNum)
-            .populate('owner', 'username avatar')
+            .populate('owner', 'username profile_photo')
 
         return res.json({ listings, page: pageNum })
     } catch (error) {
@@ -213,7 +220,14 @@ export const updateListing = async (req: Request, res: Response): Promise<any> =
             listing.photos = [...retainedPhotos, ...newlyUploadedUrls];
         }
 
-        Object.assign(listing, parsed.data)
+        const updateData: any = { ...parsed.data };
+        if (updateData.expires !== undefined) {
+            const expiresDate = new Date();
+            expiresDate.setHours(expiresDate.getHours() + updateData.expires);
+            updateData.expires = expiresDate;
+        }
+
+        Object.assign(listing, updateData)
         await listing.save()
 
         return res.json({ listing })
