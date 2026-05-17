@@ -6,6 +6,7 @@ const baseListingSchema = z.object({
     title:       z.string().trim().min(3).max(100),
     description: z.string().min(10).max(2000),
     location:    z.string().min(2),
+    expires:     z.coerce.number().pipe(z.union([z.literal(1), z.literal(6), z.literal(12), z.literal(24)])).optional(),
     price:       z.coerce.number().min(0).default(0),
     is_urgent:   z.coerce.boolean().default(false),
     // photos: controller'da multer ile gelir, buraya dahil değil
@@ -68,8 +69,25 @@ export const createListingSchema = z.discriminatedUnion('type', [
     carpoolingSchema,
     courseSchema,
     jobSchema,
-    scholarshipSchema,
-])
+    scholarshipSchema,]).superRefine((data, ctx) => {
+    // 1. Acil (is_urgent: true) ise expires zorunlu olmalı
+    if (data.is_urgent && !data.expires) {
+        ctx.addIssue({
+            code: "custom",
+            message: "İlan acil olduğunda bir geçerlilik süresi (expires) seçilmelidir.",
+            path: ["expires"],
+        });
+    }
+
+    // 2. Acil değilse (is_urgent: false) ve expires gönderilmişse hata fırlat
+    if (!data.is_urgent && data.expires) {
+        ctx.addIssue({
+            code: "custom",
+            message: "Normal ilanlar için geçerlilik süresi (expires) belirlenemez.",
+            path: ["expires"],
+        });
+    }
+});
 
 // ─── UPDATE (tüm alanlar optional) ─────────────────────────────────────────
 
@@ -79,10 +97,29 @@ export const updateListingSchema = z.object({
     location:    z.string().min(2).optional(),
     price:       z.coerce.number().min(0).optional(),
     is_urgent:   z.coerce.boolean().optional(),
+    expires:     z.coerce.number().pipe(z.union([z.literal(1), z.literal(6), z.literal(12), z.literal(24)])).optional(),
     status:      z.enum(['active', 'sold', 'closed', 'expired']).optional(),
     retainedPhotos: z.any().optional(), // Frontend'den array, JSON veya string olarak gelebilir
     // type değiştirilemiz — discriminator sabit kalır
-})
+}) .superRefine((data, ctx) => {
+        // Update esnasında sadece data verildiyse kontrol et
+        if (data.is_urgent === true && data.expires === undefined) {
+             // Not: Normalde is_urgent true yapılıyorsa ve veritabanında expires yoksa sorun çıkabilir,
+             // bu yüzden güncellemede de ikisi beraber yollanmalı.
+             ctx.addIssue({
+                 code: "custom",
+                 message: "İlan acil (urgent) durumuna getiriliyorsa geçerlilik süresi (expires) sağlanmalıdır.",
+                 path: ["expires"],
+             });
+        }
+        if (data.is_urgent === false && data.expires !== undefined) {
+            ctx.addIssue({
+                code: "custom",
+                message: "Normal ilanlar için geçerlilik süresi (expires) güncellenemez.",
+                path: ["expires"],
+            });
+        }
+    });
 
 // ─── TYPES ──────────────────────────────────────────────────────────────────
 

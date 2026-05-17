@@ -43,6 +43,9 @@ const listingSchema = new mongoose.Schema(
             type: Boolean,
             default: false,
         },
+        expires:{
+            type: Date,
+        },
         views: {
             type: Number,
             default: 0,
@@ -60,6 +63,7 @@ const listingSchema = new mongoose.Schema(
 )
 
 listingSchema.index({ status: 1, createdAt: -1 })
+listingSchema.index({ title: 'text', description: 'text' })
 listingSchema.index({ owner: 1 })
 
 export const Listing = mongoose.model('Listing', listingSchema)
