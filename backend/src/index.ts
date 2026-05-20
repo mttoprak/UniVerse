@@ -22,6 +22,7 @@ import userRouter from "./routes/user.router"
 import {Resend} from "resend";
 import miscRouter from "./routes/misc.router";
 import listingRouter from "./routes/listing.router";
+import commendRouter from "./routes/commend.router";
 
 
 const app = express()
@@ -41,6 +42,7 @@ app.use("/api/auth", authRouter)
 app.use("/api/misc", miscRouter)
 app.use('/api/test', testRouter);
 app.use('/api/listing', listingRouter);
+app.use('/api/comment', commendRouter);
 // app.use("/api/auth", authRoutes)
 // app.use("/api/users", userRoutes)
 
