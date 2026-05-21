@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { ChevronLeft, Heart, Share2, MessageSquare, MapPin, Calendar, User, ShieldCheck, Tag, Info, Loader2, Eye, AlertTriangle } from 'lucide-react';
 
 // --- BACKEND ÇÖKERSE VEYA İLAN YOKSA GÖSTERİLECEK MOCK DATA ---
@@ -24,19 +24,20 @@ const MOCK_AD = {
     seller: {
         username: "ahmetemingenc",
         edu_email: "ahmet@ogr.university.edu.tr",
-        university: "Ege üniversitesi",
+        university: "Ege Üniversitesi",
         profile_photo: ""
     }
 };
 
 export default function AdDetailPage() {
     const params = useParams();
+    const router = useRouter();
     const id = params.id;
 
     // State Management for Data and Loading
     const [ad, setAd] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(true);
-    const [isMockData, setIsMockData] = useState(false); // Yeni state!
+    const [isMockData, setIsMockData] = useState(false);
 
     // UI States
     const [isFavorite, setIsFavorite] = useState(false);
@@ -50,12 +51,28 @@ export default function AdDetailPage() {
                 setIsLoading(true);
                 setIsMockData(false);
 
+                const token = localStorage.getItem('accessToken');
+                if (!token) {
+                    router.push('/login');
+                    return;
+                }
+
                 const response = await fetch(`http://localhost:5000/api/listing/${id}`, {
                     method: 'GET',
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
                 });
 
-                const data = await response.json();
+                // HTML DÖNERSE DİYE GÜVENLİK KONTROLÜ
+                const text = await response.text();
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch (e) {
+                    throw new Error("Sunucu JSON yerine HTML/Hata sayfası döndürdü. Backend rotasını kontrol edin.");
+                }
 
                 if (!response.ok) {
                     throw new Error(data.message || 'İlan bulunamadı.');
@@ -64,7 +81,6 @@ export default function AdDetailPage() {
                 setAd(data.listing);
             } catch (err: any) {
                 console.warn("Backend hatası yakalandı. Mock Data yükleniyor...", err);
-                // Hata ekranı göstermek yerine MOCK datayı basıyoruz!
                 setAd(MOCK_AD);
                 setIsMockData(true);
             } finally {
@@ -73,7 +89,7 @@ export default function AdDetailPage() {
         };
 
         fetchAdDetails();
-    }, [id]);
+    }, [id, router]);
 
     // Loading State UI
     if (isLoading) {
@@ -85,7 +101,6 @@ export default function AdDetailPage() {
         );
     }
 
-    // Güvenlik kontrolü (Mock data bile yüklenemezse diye)
     if (!ad) return null;
 
     const displayImages = ad.photos && ad.photos.length > 0
@@ -96,10 +111,21 @@ export default function AdDetailPage() {
 
     const seller = ad.owner || ad.seller;
 
+    // MVP Mesajlaşma Yöntemi: E-posta Yönlendirmesi
+    const handleContactSeller = () => {
+        const targetEmail = seller?.edu_email || seller?.email || "";
+        if (!targetEmail) {
+            alert("Satıcının iletişim adresi bulunamadı.");
+            return;
+        }
+        const subject = encodeURIComponent(`UniVerse İlanı: ${ad.title}`);
+        const body = encodeURIComponent(`Merhaba @${seller.username},\n\nUniVerse platformundaki "${ad.title}" başlıklı ilanınız için sizinle iletişime geçiyorum.\n\nİlan hala güncel mi?`);
+        window.location.href = `mailto:${targetEmail}?subject=${subject}&body=${body}`;
+    };
+
     return (
         <div className="min-h-screen pt-28 pb-12 px-4 relative">
 
-            {/* MOCK DATA UYARI BANNER'I */}
             {isMockData && (
                 <div className="absolute top-20 left-0 w-full bg-amber-500/20 border-b border-amber-500/50 py-2 z-40 flex items-center justify-center gap-2 backdrop-blur-md">
                     <AlertTriangle size={16} className="text-amber-500" />
@@ -107,7 +133,6 @@ export default function AdDetailPage() {
                 </div>
             )}
 
-            {/* Background Ambient Glow Effects */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10">
                 <div className="absolute top-0 right-1/4 w-96 h-96 bg-cyan-500/10 blur-[150px] rounded-full mix-blend-screen"></div>
                 <div className="absolute bottom-0 left-1/4 w-96 h-96 bg-emerald-500/10 blur-[150px] rounded-full mix-blend-screen"></div>
@@ -115,7 +140,6 @@ export default function AdDetailPage() {
 
             <div className="max-w-6xl mx-auto mt-4">
 
-                {/* Top Navigation Bar - Back & Actions */}
                 <div className="flex items-center justify-between mb-8">
                     <Link href="/feed" className="flex items-center space-x-2 text-gray-400 hover:text-cyan-400 transition-colors group">
                         <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center group-hover:border-cyan-500/50 transition-colors">
@@ -139,13 +163,8 @@ export default function AdDetailPage() {
                     </div>
                 </div>
 
-                {/* Main Content Grid */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-
-                    {/* LEFT COLUMN: Image Gallery and Description */}
                     <div className="lg:col-span-2 space-y-8">
-
-                        {/* Image Gallery Viewer */}
                         <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-3xl overflow-hidden p-2">
                             <div className="aspect-[4/3] w-full rounded-2xl overflow-hidden bg-[#0B0F19] relative group flex items-center justify-center">
                                 <img
@@ -155,7 +174,6 @@ export default function AdDetailPage() {
                                 />
                             </div>
 
-                            {/* Thumbnail Selector List */}
                             {displayImages.length > 1 && (
                                 <div className="flex items-center gap-3 mt-3 px-2 pb-2 overflow-x-auto">
                                     {displayImages.map((img: string, idx: number) => (
@@ -171,7 +189,6 @@ export default function AdDetailPage() {
                             )}
                         </div>
 
-                        {/* Description Box */}
                         <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-[0_10px_30px_rgba(0,0,0,0.2)]">
                             <h3 className="text-xl font-black text-white uppercase tracking-tight flex items-center space-x-2 mb-6">
                                 <Info size={20} className="text-cyan-500" />
@@ -183,13 +200,8 @@ export default function AdDetailPage() {
                         </div>
                     </div>
 
-                    {/* RIGHT COLUMN: Pricing, Details, and Seller Info */}
                     <div className="space-y-6">
-
-                        {/* Sticky Action Panel */}
                         <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-[0_10px_30px_rgba(0,0,0,0.2)] sticky top-28">
-
-                            {/* Header & Price */}
                             <div className="mb-6">
                                 <div className="flex items-center justify-between mb-4">
                                     <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-[10px] font-black uppercase tracking-widest">
@@ -211,7 +223,6 @@ export default function AdDetailPage() {
                                 </div>
                             </div>
 
-                            {/* Quick Info Items */}
                             <div className="space-y-4 mb-8 pt-6 border-t border-white/10">
                                 <div className="flex items-center text-sm text-gray-400">
                                     <MapPin size={16} className="mr-3 text-gray-500" />
@@ -231,7 +242,6 @@ export default function AdDetailPage() {
                                 )}
                             </div>
 
-                            {/* Seller Summary Card */}
                             {seller && (
                                 <div className="bg-white/5 border border-white/10 rounded-2xl p-4 mb-6 flex items-center space-x-4">
                                     <div className="w-12 h-12 rounded-full overflow-hidden bg-cyan-500/20 border border-cyan-500/50 flex items-center justify-center flex-shrink-0">
@@ -257,8 +267,11 @@ export default function AdDetailPage() {
                                 </div>
                             )}
 
-                            {/* Main Call to Action Button */}
-                            <button className="w-full flex items-center justify-center space-x-2 bg-cyan-600 hover:bg-cyan-500 text-[#0B0F19] py-4 rounded-xl font-black uppercase tracking-widest transition-all shadow-[0_10px_20px_rgba(34,211,238,0.2)]">
+                            {/* MVP İletişim Butonu */}
+                            <button
+                                onClick={handleContactSeller}
+                                className="w-full flex items-center justify-center space-x-2 bg-cyan-600 hover:bg-cyan-500 text-[#0B0F19] py-4 rounded-xl font-black uppercase tracking-widest transition-all shadow-[0_10px_20px_rgba(34,211,238,0.2)]"
+                            >
                                 <MessageSquare size={18} />
                                 <span>Satıcıya Mesaj At</span>
                             </button>
@@ -267,10 +280,8 @@ export default function AdDetailPage() {
                                 Güvenliğiniz için kampüs içi teslimat tercih edin.
                             </p>
                         </div>
-
                     </div>
                 </div>
-
             </div>
         </div>
     );

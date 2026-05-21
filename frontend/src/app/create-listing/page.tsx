@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 
 const categories = [
-    { id: 'job', title: 'İş / Staj', icon: Briefcase, requiresStudent: false, color: 'text-blue-400', border: 'border-blue-500/30', bg: 'hover:bg-blue-500/10', previewBg: 'bg-blue-500', previewText: 'text-blue-400', previewPillBg: 'bg-blue-500/10', previewBorder: 'border-blue-500/20' },
+    { id: 'job', title: 'İş / Staj', icon: Briefcase, requiresStudent: false,  color: 'text-blue-400', border: 'border-blue-500/30', bg: 'hover:bg-blue-500/10', previewBg: 'bg-blue-500', previewText: 'text-blue-400', previewPillBg: 'bg-blue-500/10', previewBorder: 'border-blue-500/20' },
     { id: 'scholarship', title: 'Burs', icon: Award, requiresStudent: false, color: 'text-yellow-400', border: 'border-yellow-500/30', bg: 'hover:bg-yellow-500/10', previewBg: 'bg-yellow-500', previewText: 'text-yellow-400', previewPillBg: 'bg-yellow-500/10', previewBorder: 'border-yellow-500/20' },
     { id: 'carpool', title: 'Yol Arkadaşı', icon: Car, requiresStudent: false, color: 'text-emerald-400', border: 'border-emerald-500/30', bg: 'hover:bg-emerald-500/10', previewBg: 'bg-emerald-500', previewText: 'text-emerald-400', previewPillBg: 'bg-emerald-500/10', previewBorder: 'border-emerald-500/20' },
     { id: 'roommate', title: 'Ev/Oda Arkadaşı', icon: Home, requiresStudent: true, color: 'text-teal-400', border: 'border-teal-500/30', bg: 'hover:bg-teal-500/10', previewBg: 'bg-teal-500', previewText: 'text-teal-400', previewPillBg: 'bg-teal-500/10', previewBorder: 'border-teal-500/20' },
@@ -125,7 +125,6 @@ export default function CreateListingWizard() {
             case 'tutoring': return formData.tutoringSubject && formData.tutoringFormat;
             case 'notes': return formData.noteCode && formData.noteFormat;
             case 'secondhand': return city && district && formData.itemCondition;
-            case 'emergency': return true;
             default: return false;
         }
     };
@@ -183,7 +182,6 @@ export default function CreateListingWizard() {
             let backendType = selectedCat;
             if (selectedCat === 'carpool') backendType = 'carpooling';
             if (selectedCat === 'tutoring' || selectedCat === 'notes') backendType = 'course';
-            if (selectedCat === 'emergency') backendType = 'secondhand';
 
             submitData.append('type', backendType || 'secondhand');
             submitData.append('title', formData.title);
@@ -221,7 +219,7 @@ export default function CreateListingWizard() {
                 submitData.append('photos', file);
             });
 
-            const response = await fetch('http://localhost:5000/api/listings', {
+            const response = await fetch('http://localhost:5000/api/listing', {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`
@@ -697,7 +695,15 @@ export default function CreateListingWizard() {
                     <ArrowLeft size={20} /><span>Geri</span>
                 </button>
                 <button
-                    onClick={() => step === 4 ? submitListing() : nextStep()}
+                    onClick={() => {
+                        if (step === 1 && selectedCat === 'emergency') {
+                            router.push('/create-emergency');
+                        } else if (step === 4) {
+                            submitListing();
+                        } else {
+                            nextStep();
+                        }
+                    }}
                     disabled={isNextDisabled() || isSubmitting}
                     className={`flex items-center space-x-2 px-8 py-3 rounded-full font-black text-[#0B0F19] transition-all duration-300 ${
                         isNextDisabled() || isSubmitting
