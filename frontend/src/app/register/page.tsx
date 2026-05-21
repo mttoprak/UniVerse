@@ -1,12 +1,16 @@
 "use client";
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Mail, Lock, User, KeyRound, Building2, Calendar, Loader2, ShieldCheck, AlertCircle } from 'lucide-react';
 
 export default function RegisterPage() {
+    const router = useRouter();
+
     const [step, setStep] = useState(1);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [successMessage, setSuccessMessage] = useState<string | null>(null);
     const [fieldErrors, setFieldErrors] = useState<{ [key: string]: string }>({});
 
     const [tempToken, setTempToken] = useState<string | null>(null);
@@ -107,6 +111,8 @@ export default function RegisterPage() {
     const handleCompleteProfile = async () => {
         setIsLoading(true);
         setError(null);
+        setSuccessMessage(null);
+
         try {
             const payload: any = {
                 account_type: formData.account_type,
@@ -131,11 +137,16 @@ export default function RegisterPage() {
             if (!response.ok) throw data;
 
             localStorage.setItem('accessToken', data.accessToken);
-            alert("Kayıt Başarılı! Feed sayfasına yönlendiriliyorsunuz.");
+            window.dispatchEvent(new Event('auth_status_changed'));
+
+            setSuccessMessage("Kayıt başarılı! Ekosisteme giriş yapılıyor...");
+            setTimeout(() => {
+                router.push('/feed');
+            }, 2000);
+
         } catch (err: any) {
             handleBackendErrors(err);
-        } finally {
-            setIsLoading(false);
+            setIsLoading(false); // Sadece hata olursa loadingi durdur, başarılıysa dönmeye devam etsin.
         }
     };
 
@@ -170,6 +181,13 @@ export default function RegisterPage() {
                 {error && (
                     <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm flex items-center gap-2">
                         <AlertCircle size={18} /> {error}
+                    </div>
+                )}
+
+                {/* Success Alert */}
+                {successMessage && (
+                    <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 text-sm flex items-center gap-2 animate-pulse">
+                        <ShieldCheck size={18} /> {successMessage}
                     </div>
                 )}
 
@@ -268,7 +286,7 @@ export default function RegisterPage() {
                             {fieldErrors.birthdate && <p className="text-[10px] text-red-400 ml-1 uppercase">{fieldErrors.birthdate}</p>}
                         </div>
 
-                        <button onClick={handleCompleteProfile} disabled={isLoading} className="w-full mt-4 flex items-center justify-center space-x-2 bg-emerald-500 hover:bg-emerald-400 text-[#0B0F19] py-3.5 rounded-xl font-black transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] disabled:opacity-50">
+                        <button onClick={handleCompleteProfile} disabled={isLoading || successMessage !== null} className="w-full mt-4 flex items-center justify-center space-x-2 bg-emerald-500 hover:bg-emerald-400 text-[#0B0F19] py-3.5 rounded-xl font-black transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] disabled:opacity-50 disabled:cursor-not-allowed">
                             {isLoading ? <Loader2 className="animate-spin" size={20} /> : <span>Kurulumu Tamamla</span>}
                         </button>
                     </div>

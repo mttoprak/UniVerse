@@ -25,7 +25,7 @@ export default function CreateEmergencyPage() {
         setSubmitStatus('idle');
 
         try {
-            const API_URL = "http://localhost:5000/api/emergencies";
+            const API_URL = "http://localhost:5000/api/listings";
 
             const payload = {
                 title,

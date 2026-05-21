@@ -13,6 +13,7 @@ export default function LoginPage() {
     const [generalError, setGeneralError] = useState<string | null>(null);
     const [warning, setWarning] = useState<string | null>(null); // State for incomplete profile warnings
     const [fieldErrors, setFieldErrors] = useState<{ [key: string]: string }>({});
+    const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
     const [formData, setFormData] = useState({
         email: '',
@@ -53,6 +54,7 @@ export default function LoginPage() {
         setGeneralError(null);
         setWarning(null); // clear previous warnings on new attempt
         setFieldErrors({});
+        setSuccessMessage(null);
 
         try {
             const response = await fetch('http://localhost:5000/api/auth/login', {
@@ -69,8 +71,13 @@ export default function LoginPage() {
             if (data.is_complete) {
                 // success: save full access token
                 localStorage.setItem('accessToken', data.accessToken);
-                alert("Login successful! Redirecting to feed...");
-                router.push('/feed');
+                window.dispatchEvent(new Event('auth_status_changed'));
+                setSuccessMessage("Giriş başarılı! Ekosisteme yönlendiriliyorsunuz...");
+
+                setTimeout(() => {
+                    router.push('/feed');
+                }, 2000);
+
             } else {
                 // incomplete profile: save temp token and show warning box
                 localStorage.setItem('tempToken', data.tempToken);
