@@ -48,7 +48,13 @@ const UserSchema = new Schema({
     university:         { type: String } ,
     favorite_listings: [{ type: mongoose.Schema.Types.ObjectId, ref: "Listing" }],
     favorite_sellers:  [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-    saved_listings:     { type: Map<String,{ type: mongoose.Schema.Types.ObjectId, ref: "Listing" }>} , //Could be a feature
+    // Map<listName, listingId[]>
+    // Örn: { "Sonraya bırak": [id1, id2], "Favori evler": [id3] }
+    saved_listings: {
+        type: Map,
+        of: [{ type: mongoose.Schema.Types.ObjectId, ref: "Listing" }],
+        default: {}
+    },
     rating_sum:         { type: Number, default: 0 },
     rating_count:       { type: Number, default: 0 },
 
