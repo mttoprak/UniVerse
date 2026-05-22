@@ -48,13 +48,23 @@ export const completeProfileSchema = z.object({
         })
     }
 
-    if (data.account_type === "student" && !data.edu_email) {
+    if (data.account_type === "external" && data.edu_email) {
         ctx.addIssue({
             code: "custom",
             path: ["edu_email"],
-            message: "Edu emails is required for students",
+            message: "External users cannot write Edu E-mail",
         })
     }
+
+    if (data.account_type === "external" && data.university) {
+        ctx.addIssue({
+            code: "custom",
+            path: ["university"],
+            message: "External users cannot write University",
+        })
+    }
+
+
 })
 
 export const loginSchema = z.object({
