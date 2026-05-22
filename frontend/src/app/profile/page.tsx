@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation'; // Doğru import
 import { Package, Heart, Settings, Trash2, Edit3, ExternalLink, User, MapPin, Calendar, AlertTriangle, X, CheckCircle, Star, Mail, Phone, GraduationCap, Shield, Loader2 } from 'lucide-react';
 
 interface Advert {
@@ -33,7 +33,7 @@ export default function ProfilePage() {
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [itemToEdit, setItemToEdit] = useState<any>(null);
 
-    // Şifre güncelleme için ekstra state
+    // Şifre güncelleme için state
     const [newPassword, setNewPassword] = useState('');
 
     // 1. KULLANICI VERİLERİNİ ÇEK (İlk Yükleme)
@@ -47,7 +47,6 @@ export default function ProfilePage() {
 
             try {
                 setPageLoading(true);
-                // Kullanıcı bilgilerini çek
                 const userRes = await fetch('http://localhost:5000/api/auth/me', {
                     method: 'GET',
                     headers: { 'Authorization': `Bearer ${token}` }
@@ -57,13 +56,13 @@ export default function ProfilePage() {
 
                 const currentProfile = userDataJson.user || userDataJson;
 
-                // HTML input[type="date"] formatı için tarih düzeltmesi (YYYY-MM-DD)
+                // Tarih formatı düzeltmesi
                 if (currentProfile.birthdate) {
                     currentProfile.birthdate = new Date(currentProfile.birthdate).toISOString().split('T')[0];
                 }
                 setUserData(currentProfile);
 
-                // Kullanıcının kendi ilanlarını çek
+                // İlanları Çek
                 const listingsRes = await fetch('http://localhost:5000/api/listing', {
                     method: 'GET',
                     headers: { 'Authorization': `Bearer ${token}` }
@@ -87,7 +86,7 @@ export default function ProfilePage() {
         fetchInitialData();
     }, [router]);
 
-    // 2. SEKMELER DEĞİŞTİĞİNDE FAVORİLERİ GETİR
+    // 2. FAVORİLERİ GETİR (Sekme değişince)
     useEffect(() => {
         if (activeTab === 'favorites' && userData) {
             const fetchFavorites = async () => {
@@ -110,7 +109,6 @@ export default function ProfilePage() {
         }
     }, [activeTab, userData]);
 
-    // Toast Mesaj Zamanlayıcı
     useEffect(() => {
         if (toastMessage) {
             const timer = setTimeout(() => setToastMessage(null), 3000);
@@ -118,7 +116,7 @@ export default function ProfilePage() {
         }
     }, [toastMessage]);
 
-    // İLAN SİLME (DELETE)
+    // SİLME
     const confirmDelete = (id: string) => { setItemToDelete(id); setDeleteModalOpen(true); };
     const executeDelete = async () => {
         if (!itemToDelete) return;
@@ -142,7 +140,7 @@ export default function ProfilePage() {
         }
     };
 
-    // İLAN DÜZENLEME (PATCH)
+    // DÜZENLEME
     const openEditModal = (advert: any) => { setItemToEdit({ ...advert }); setEditModalOpen(true); };
     const saveEdit = async () => {
         if (!itemToEdit) return;
@@ -174,7 +172,7 @@ export default function ProfilePage() {
         }
     };
 
-    // PROFİL AYARLARINI GÜNCELLEME (PATCH)
+    // PROFİL GÜNCELLEME
     const handleProfileUpdate = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
@@ -218,7 +216,6 @@ export default function ProfilePage() {
         }
     };
 
-    // FAVORİ TOGGLE (Kaldırma İşlemi)
     const handleRemoveFavorite = async (listingId: string) => {
         const token = localStorage.getItem('accessToken');
         try {
@@ -345,7 +342,6 @@ export default function ProfilePage() {
             {/* Bottom Section */}
             <div className="flex flex-col md:flex-row gap-8">
 
-                {/* Left Tabs Menu */}
                 <div className="w-full md:w-72 flex flex-col gap-2">
                     <button onClick={() => setActiveTab('adverts')} className={`p-4 rounded-2xl flex items-center gap-3 font-semibold transition-all ${activeTab === 'adverts' ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' : 'bg-transparent text-gray-400 hover:bg-white/5 hover:text-gray-200'}`}>
                         <Package size={20} /> İlanlarım ({myAdverts.length})
@@ -358,10 +354,8 @@ export default function ProfilePage() {
                     </button>
                 </div>
 
-                {/* Tab Content Panel */}
                 <div className="flex-1 bg-[#0B0F19]/60 backdrop-blur-md border border-white/10 rounded-3xl p-6 md:p-8 min-h-[400px]">
 
-                    {/* Tab: My Adverts */}
                     {activeTab === 'adverts' && (
                         <div className="space-y-6 animate-in fade-in duration-300">
                             <h2 className="text-xl font-bold text-white mb-4 border-b border-white/10 pb-4">Aktif İlanlarım</h2>
@@ -390,7 +384,6 @@ export default function ProfilePage() {
                         </div>
                     )}
 
-                    {/* Tab: Favorites */}
                     {activeTab === 'favorites' && (
                         <div className="space-y-6 animate-in fade-in duration-300">
                             <h2 className="text-xl font-bold text-white mb-4 border-b border-white/10 pb-4">Favoriye Aldıklarım</h2>
@@ -418,7 +411,6 @@ export default function ProfilePage() {
                         </div>
                     )}
 
-                    {/* Tab: Account Settings */}
                     {activeTab === 'settings' && (
                         <div className="space-y-8 animate-in fade-in duration-300">
                             <div className="border-b border-white/10 pb-4 flex items-center justify-between">
@@ -429,7 +421,6 @@ export default function ProfilePage() {
                             </div>
 
                             <form onSubmit={handleProfileUpdate} className="space-y-8">
-                                {/* Personal Info */}
                                 <div className="space-y-4">
                                     <h3 className="text-sm font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-2">
                                         <User size={16} /> Kişisel Bilgiler
@@ -454,7 +445,6 @@ export default function ProfilePage() {
                                     </div>
                                 </div>
 
-                                {/* Contact & Education */}
                                 <div className="space-y-4 pt-4 border-t border-white/10">
                                     <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider flex items-center gap-2">
                                         <Mail size={16} /> İletişim & Eğitim
@@ -474,11 +464,27 @@ export default function ProfilePage() {
 
                                         {userData.account_type === 'student' && (
                                             <>
-                                                <div>
-                                                    <label className="block text-xs font-semibold text-rose-400 mb-1.5">Edu Email (Doğrulanmış)</label>
+                                                <div className="space-y-1">
+                                                    <div className="flex items-center justify-between mb-1.5">
+                                                        <label className="text-xs font-semibold text-rose-400">Edu Email</label>
+                                                        {userData.is_verified ? (
+                                                            <span className="text-[10px] font-bold bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                                                 <CheckCircle size={10} /> Doğrulandı
+                                                            </span>
+                                                        ) : (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => router.push('/verify-edu')}
+                                                                className="text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30 hover:bg-rose-500 hover:text-white px-2 py-0.5 rounded-md transition-colors"
+                                                            >
+                                                                Hemen Doğrula
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                     <input type="email" value={userData.edu_email || ''} disabled className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-3 text-gray-400 cursor-not-allowed" />
                                                 </div>
-                                                <div>
+
+                                                <div className="space-y-1">
                                                     <label className="block text-xs font-semibold text-gray-400 mb-1.5">Üniversite</label>
                                                     <input type="text" value={userData.university || ''} onChange={(e) => setUserData({...userData, university: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-cyan-500/50 transition-colors" />
                                                 </div>
@@ -487,18 +493,19 @@ export default function ProfilePage() {
                                     </div>
                                 </div>
 
-                                {/* Security */}
-                                <div className="space-y-4 pt-4 border-t border-white/10">
-                                    <h3 className="text-sm font-bold text-rose-400 uppercase tracking-wider flex items-center gap-2">
-                                        <Shield size={16} /> Güvenlik
-                                    </h3>
-                                    <div className="grid grid-cols-1 gap-4">
-                                        <div>
-                                            <label className="block text-xs font-semibold text-gray-400 mb-1.5">Yeni Şifre (Değiştirmek istemiyorsanız boş bırakın)</label>
-                                            <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="••••••••" className="w-full md:w-1/2 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-rose-500/50 transition-colors" />
+                                {userData.auth_provider === 'local' && (
+                                    <div className="space-y-4 pt-4 border-t border-white/10">
+                                        <h3 className="text-sm font-bold text-rose-400 uppercase tracking-wider flex items-center gap-2">
+                                            <Shield size={16} /> Güvenlik
+                                        </h3>
+                                        <div className="grid grid-cols-1 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-semibold text-gray-400 mb-1.5">Yeni Şifre (Değiştirmek istemiyorsanız boş bırakın)</label>
+                                                <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="••••••••" className="w-full md:w-1/2 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-rose-500/50 transition-colors" />
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
+                                )}
 
                                 <div className="pt-6 border-t border-white/10 flex justify-end">
                                     <button type="submit" disabled={isSubmitting} className="px-8 py-3.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 transition-all text-black font-bold shadow-[0_0_20px_rgba(34,211,238,0.3)] disabled:opacity-50">
@@ -509,6 +516,7 @@ export default function ProfilePage() {
                         </div>
                     )}
                 </div>
+
             </div>
         </div>
     );
