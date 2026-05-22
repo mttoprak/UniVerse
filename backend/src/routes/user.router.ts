@@ -10,6 +10,7 @@ import {
     getPublicProfile,
     getPublicProfileByUsername,
 } from "../controllers/user.controller"
+import {sendEduVerification, verifyEduMail} from "../controllers/verification.controller";
 
 const router = Router()
 
@@ -47,5 +48,12 @@ router.get("/username/:username", authMiddleware, getPublicProfileByUsername)
 // GET /api/user/:id   → Başka bir kullanıcının id ile public profili
 // (Kritik alanlar gizli: password, email, phone vb.)
 router.get("/:id", authMiddleware, getPublicProfile)
+
+
+// POST /api/user/sendEduVerification   → Sending Edu-Email verification
+router.post("/sendEduVerification", authMiddleware, sendEduVerification)
+
+// POST /api/user/verifyEduMail   → Verify Edu-Email
+router.post("/verifyEduMail", authMiddleware, verifyEduMail)
 
 export default router
