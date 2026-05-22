@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Mail, Lock, User, KeyRound, Building2, Calendar, Loader2, ShieldCheck, AlertCircle } from 'lucide-react';
+import { Mail, Lock, User, KeyRound, Building2, Calendar, Loader2, ShieldCheck, AlertCircle, GraduationCap } from 'lucide-react';
 
 export default function RegisterPage() {
     const router = useRouter();
@@ -24,7 +24,8 @@ export default function RegisterPage() {
         code: '',
         username: '',
         birthdate: '',
-        university: ''
+        university: '',
+        edu_email: '' // Yeni eklenen alan
     });
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -121,6 +122,8 @@ export default function RegisterPage() {
 
             if (formData.account_type === 'student') {
                 if (formData.university) payload.university = formData.university;
+                // Backend'in beklediği edu_email alanını gönderiyoruz
+                if (formData.edu_email) payload.edu_email = formData.edu_email;
             }
             if (formData.birthdate) payload.birthdate = new Date(formData.birthdate);
 
@@ -146,7 +149,7 @@ export default function RegisterPage() {
 
         } catch (err: any) {
             handleBackendErrors(err);
-            setIsLoading(false); // Sadece hata olursa loadingi durdur, başarılıysa dönmeye devam etsin.
+            setIsLoading(false);
         }
     };
 
@@ -270,12 +273,21 @@ export default function RegisterPage() {
                         </div>
 
                         {formData.account_type === 'student' && (
-                            <div className="space-y-1">
-                                <div className="relative">
-                                    <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-                                    <input type="text" name="university" value={formData.university} onChange={handleChange} placeholder="Üniversite Adı (Opsiyonel)" className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-4 focus:border-cyan-500/50 outline-none text-white text-sm" />
+                            <>
+                                <div className="space-y-1">
+                                    <div className="relative">
+                                        <GraduationCap className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+                                        <input type="email" name="edu_email" value={formData.edu_email} onChange={handleChange} placeholder="Üniversite E-postası (.edu.tr)" className={`w-full bg-white/5 border ${fieldErrors.edu_email ? 'border-red-500/50' : 'border-white/10'} rounded-xl py-3 pl-10 pr-4 focus:border-cyan-500/50 outline-none text-white text-sm`} />
+                                    </div>
+                                    {fieldErrors.edu_email && <p className="text-[10px] text-red-400 ml-1 uppercase">{fieldErrors.edu_email}</p>}
                                 </div>
-                            </div>
+                                <div className="space-y-1">
+                                    <div className="relative">
+                                        <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+                                        <input type="text" name="university" value={formData.university} onChange={handleChange} placeholder="Üniversite Adı (Opsiyonel)" className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-4 focus:border-cyan-500/50 outline-none text-white text-sm" />
+                                    </div>
+                                </div>
+                            </>
                         )}
 
                         <div className="space-y-1">
