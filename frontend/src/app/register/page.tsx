@@ -25,7 +25,7 @@ export default function RegisterPage() {
         username: '',
         birthdate: '',
         university: '',
-        edu_email: '' // Yeni eklenen alan
+        edu_email: ''
     });
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -177,7 +177,7 @@ export default function RegisterPage() {
                     {step === 1 ? 'Kayıt Ol' : step === 2 ? 'Doğrulama' : 'Profilini Kur'}
                 </h2>
                 <p className="text-gray-400 mb-8 text-sm">
-                    {step === 1 ? 'Temel bilgilerini girerek hesabını oluştur.' : step === 2 ? 'E-postana gönderilen 6 haneli kodu gir.' : 'Seni daha yakından tanımamız için son birkaç adım.'}
+                    {step === 1 ? 'Temel bilgilerini girerek hesabını oluştur.' : step === 2 ? 'E-postana gönderilen 6 haneli kodu gir. Spam klasörünü kontrol etmeyi unutma!' : 'Seni daha yakından tanımamız için son birkaç adım.'}
                 </p>
 
                 {/* General Error Alert */}
@@ -284,7 +284,7 @@ export default function RegisterPage() {
                                 <div className="space-y-1">
                                     <div className="relative">
                                         <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-                                        <input type="text" name="university" value={formData.university} onChange={handleChange} placeholder="Üniversite Adı (Opsiyonel)" className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-4 focus:border-cyan-500/50 outline-none text-white text-sm" />
+                                        <input type="text" name="university" value={formData.university} onChange={handleChange} placeholder="Üniversite Adı" className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-4 focus:border-cyan-500/50 outline-none text-white text-sm" />
                                     </div>
                                 </div>
                             </>
