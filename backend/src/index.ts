@@ -43,6 +43,9 @@ app.use("/api/misc", miscRouter)
 app.use('/api/test', testRouter);
 app.use('/api/listing', listingRouter);
 app.use('/api/comment', commendRouter);
+app.use("/api/user", userRouter)
+
+
 // app.use("/api/auth", authRoutes)
 // app.use("/api/users", userRoutes)
 

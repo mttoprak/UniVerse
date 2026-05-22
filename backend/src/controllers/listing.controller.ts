@@ -1,5 +1,6 @@
 import { Request, Response } from 'express'
 import { Listing } from "../models/Listing"
+import User from "../models/User"
 import { uploadSingle, uploadMultiple, deleteFile } from '../utils/cloudinary/uploader.util';
 import { createListingSchema, updateListingSchema } from '../validators/listing.validator'
 import {z} from "zod";
@@ -70,7 +71,17 @@ export const getListing = async (req: Request, res: Response): Promise<any> => {
         if (!listing)
             return res.status(404).json({ error: 'Listing not found' })
 
-        return res.json({ listing })
+        let is_favorited = false;
+        if (req.userId) {
+            const user = await User.findById(req.userId).select('favorite_listings');
+            if (user && user.favorite_listings) {
+                is_favorited = user.favorite_listings.some(
+                    (id: any) => id.toString() === req.params.id
+                );
+            }
+        }
+
+        return res.json({ listing, is_favorited })
     } catch (error) {
         console.error('Get listing error:', error)
         return res.status(500).json({ error: 'Server error' })

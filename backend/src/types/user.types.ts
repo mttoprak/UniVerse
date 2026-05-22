@@ -32,8 +32,9 @@ export interface IUser extends Document {
     is_admin:       boolean
 
     university?:        string
-    favourite_listings: Types.ObjectId[]
-    favourite_sellers:  Types.ObjectId[]
+    favorite_listings:  Types.ObjectId[]
+    favorite_sellers:   Types.ObjectId[]
+    saved_listings:     Map<string, Types.ObjectId[]>
     rating_sum:         number
     rating_count:       number
 
