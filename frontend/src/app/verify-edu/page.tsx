@@ -56,7 +56,7 @@ export default function VerifyEduPage() {
         const token = localStorage.getItem('accessToken');
 
         try {
-            const response = await fetch('http://localhost:5000/api/auth/sendEduVerification', {
+            const response = await fetch('http://localhost:5000/api/user/sendEduVerification', {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` }
                 // Mehmet'in dediği gibi body göndermiyoruz!
@@ -89,7 +89,7 @@ export default function VerifyEduPage() {
         const token = localStorage.getItem('accessToken');
 
         try {
-            const response = await fetch('http://localhost:5000/api/auth/verifyEduMail', {
+            const response = await fetch('http://localhost:5000/api/user/verifyEduMail', {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
