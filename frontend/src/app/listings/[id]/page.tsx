@@ -32,7 +32,7 @@ const MOCK_AD = {
 export default function AdDetailPage() {
     const params = useParams();
     const router = useRouter();
-    const id = params.id;
+    const id = params.id as string;
 
     // State Management for Data and Loading
     const [ad, setAd] = useState<any>(null);
@@ -44,7 +44,7 @@ export default function AdDetailPage() {
     const [activeImage, setActiveImage] = useState(0);
 
     useEffect(() => {
-        const fetchAdDetails = async () => {
+        const fetchAdDetailsAndFavorites = async () => {
             if (!id) return;
 
             try {
@@ -57,7 +57,8 @@ export default function AdDetailPage() {
                     return;
                 }
 
-                const response = await fetch(`http://localhost:5000/api/listing/${id}`, {
+                // 1. İLAN DETAYLARINI ÇEK
+                const adResponse = await fetch(`http://localhost:5000/api/listing/${id}`, {
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${token}`,
@@ -65,20 +66,40 @@ export default function AdDetailPage() {
                     }
                 });
 
-                // HTML DÖNERSE DİYE GÜVENLİK KONTROLÜ
-                const text = await response.text();
-                let data;
+                const adText = await adResponse.text();
+                let adData;
                 try {
-                    data = JSON.parse(text);
+                    adData = JSON.parse(adText);
                 } catch (e) {
-                    throw new Error("Sunucu JSON yerine HTML/Hata sayfası döndürdü. Backend rotasını kontrol edin.");
+                    throw new Error("Sunucu JSON yerine HTML/Hata sayfası döndürdü.");
                 }
 
-                if (!response.ok) {
-                    throw new Error(data.message || 'İlan bulunamadı.');
+                if (!adResponse.ok) {
+                    throw new Error(adData.message || 'İlan bulunamadı.');
                 }
 
-                setAd(data.listing);
+                setAd(adData.listing);
+
+                // 2. KULLANICININ FAVORİLERİNİ ÇEK VE BU İLAN FAVORİDE Mİ KONTROL ET
+                try {
+                    const favResponse = await fetch('http://localhost:5000/api/user/me/favorites', {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+
+                    if (favResponse.ok) {
+                        const favData = await favResponse.json();
+                        const favoritesArray = favData.listings || favData || [];
+                        // Çektiğimiz ID favoriler dizisinde var mı?
+                        const isAlreadyFavorite = favoritesArray.some((fav: any) => fav._id === id);
+                        setIsFavorite(isAlreadyFavorite);
+                    }
+                } catch (favErr) {
+                    console.warn("Favoriler çekilirken hata oluştu, ancak ilan yüklenmeye devam edecek.", favErr);
+                }
+
             } catch (err: any) {
                 console.warn("Backend hatası yakalandı. Mock Data yükleniyor...", err);
                 setAd(MOCK_AD);
@@ -88,8 +109,41 @@ export default function AdDetailPage() {
             }
         };
 
-        fetchAdDetails();
+        fetchAdDetailsAndFavorites();
     }, [id, router]);
+
+    // FAVORİ TOGGLE İŞLEMİ (Ekle/Çıkar)
+    const handleToggleFavorite = async () => {
+        const token = localStorage.getItem('accessToken');
+        if (!token) {
+            router.push('/login');
+            return;
+        }
+
+        // Optimistic UI: Kullanıcıyı bekletmemek için arayüzü anında güncelle
+        const previousState = isFavorite;
+        setIsFavorite(!isFavorite);
+
+        try {
+            const response = await fetch(`http://localhost:5000/api/user/me/favorites/${id}`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                // Eğer istek başarısız olursa UI'ı eski haline döndür
+                setIsFavorite(previousState);
+                console.error("Favori işlemi başarısız oldu.");
+            }
+        } catch (error) {
+            // Sunucuya ulaşılamazsa UI'ı eski haline döndür
+            setIsFavorite(previousState);
+            console.error("Favori güncellenirken sunucu hatası:", error);
+        }
+    };
 
     // Loading State UI
     if (isLoading) {
@@ -154,10 +208,10 @@ export default function AdDetailPage() {
                             <span className="text-xs font-bold uppercase tracking-widest hidden sm:inline">Paylaş</span>
                         </button>
                         <button
-                            onClick={() => setIsFavorite(!isFavorite)}
+                            onClick={handleToggleFavorite}
                             className={`flex items-center space-x-2 transition-colors ${isFavorite ? 'text-rose-500' : 'text-gray-400 hover:text-rose-400'}`}
                         >
-                            <Heart size={18} className={isFavorite ? "fill-rose-500" : ""} />
+                            <Heart size={18} className={`transition-all ${isFavorite ? "fill-rose-500 scale-110" : ""}`} />
                             <span className="text-xs font-bold uppercase tracking-widest hidden sm:inline">Favori</span>
                         </button>
                     </div>
