@@ -111,7 +111,7 @@ export default function Home() {
                                             Acil İlanlar
                                         </h2>
                                     </div>
-                                    <p className="text-gray-400 font-medium ml-7">Zaman daralıyor, hemen değerlendir!</p>
+                                    <p className="text-gray-400 font-medium ml-7">Birilerinin yardıma ihtiyacı var ya da acilen bir şeyler satıyor!</p>
                                 </div>
                                 <Link href="/emergencies-feed" className="hidden sm:flex items-center text-rose-400 hover:text-rose-300 font-bold group transition-colors">
                                     Tümünü Gör <ChevronRight size={20} className="ml-1 group-hover:translate-x-1 transition-transform" />
