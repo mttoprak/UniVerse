@@ -14,17 +14,12 @@ export const completeProfileSchema = z.object({
 
     username:  z.string()
         .min(3).max(30)
-        .regex(/^[a-zA-Z0-9_]+$/, "Only letters, numbers and _ can be used")
-        .optional(),
+        .regex(/^[a-zA-Z0-9_]+$/, "Only letters, numbers and _ can be used"),
 
     edu_email: z.email()
         .refine(val => val.endsWith(".edu.tr"), {
             message: "University emails have to end with '.edu.tr' "
         })
-        .optional(),
-
-    telephone: z.string()
-        .regex(/^\+?[0-9]{10,13}$/, "Invalid phone number")
         .optional(),
 
     birthdate: z.coerce.date().optional(),// in "1990-01-15" format
@@ -36,15 +31,23 @@ export const completeProfileSchema = z.object({
 
 }).superRefine((data, ctx) => {
     //If account type is student, username is required!
-    if (data.account_type === "student" && !data.username) {
+    if (data.account_type === "student" && !data.university) {
         ctx.addIssue({
             code: "custom",
-            path: ["username"],
-            message: "Username is required for students",
+            path: ["university"],
+            message: "university is required for students",
         })
     }
 
     // If account type is student, the edu mail is required!
+    if (data.account_type === "student" && !data.edu_email) {
+        ctx.addIssue({
+            code: "custom",
+            path: ["edu_email"],
+            message: "Edu emails is required for students",
+        })
+    }
+
     if (data.account_type === "student" && !data.edu_email) {
         ctx.addIssue({
             code: "custom",
@@ -69,4 +72,8 @@ export const localRegisterValidationSchema = z.object({
     name:         z.string().min(2),
     surname:      z.string().min(2),
     account_type: z.enum(["student", "external"])
+})
+
+export const sendEduVerificationSchema = z.object({
+    code:         z.string().length(6).regex(/^\d{6}$/),  // email
 })

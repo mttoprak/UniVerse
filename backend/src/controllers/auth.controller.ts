@@ -127,7 +127,7 @@ export const completeProfile = async (req: Request, res: Response) => {
             });
         }
 
-        const { username, edu_email, telephone, birthdate, password, university } = parsed.data
+        const { username, edu_email, birthdate, password, university } = parsed.data
 
         // 2. Is username taken?
         if (username) {
@@ -149,7 +149,6 @@ export const completeProfile = async (req: Request, res: Response) => {
         const updateData: Record<string, any> = {
             username,
             edu_email,
-            telephone,
             university,
             birthdate: birthdate ? new Date(birthdate) : undefined,
             is_complete: true,

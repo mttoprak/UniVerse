@@ -25,7 +25,7 @@ export interface IUser extends Document {
     account_type:   "student" | "external"
     auth_provider:  "local" | "google"
     is_complete:    boolean
-    // is_verified:    boolean
+    is_verified:    boolean
     // I didn't decide rather add this or not. AI still insist on it but, I feel we don't need
 
     is_banned:      boolean
