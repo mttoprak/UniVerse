@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation'; // Doğru import
+import { useRouter } from 'next/navigation';
 import { Package, Heart, Settings, Trash2, Edit3, ExternalLink, User, MapPin, Calendar, AlertTriangle, X, CheckCircle, Star, Mail, Phone, GraduationCap, Shield, Loader2 } from 'lucide-react';
 
 interface Advert {
     _id: string;
     title: string;
+    description: string;
     price: number;
     category: string;
     createdAt: string;
@@ -154,12 +155,13 @@ export default function ProfilePage() {
                 },
                 body: JSON.stringify({
                     title: itemToEdit.title,
+                    description: itemToEdit.description,
                     price: Number(itemToEdit.price)
                 })
             });
 
             if (response.ok) {
-                setMyAdverts(prev => prev.map(ad => ad._id === itemToEdit._id ? { ...ad, title: itemToEdit.title, price: itemToEdit.price } : ad));
+                setMyAdverts(prev => prev.map(ad => ad._id === itemToEdit._id ? { ...ad, title: itemToEdit.title, description: itemToEdit.description, price: itemToEdit.price } : ad));
                 setToastMessage('İlan güncellendi.');
             } else {
                 setToastMessage('Güncelleme başarısız oldu.');
@@ -284,6 +286,10 @@ export default function ProfilePage() {
                             <div>
                                 <label className="block text-xs font-semibold text-cyan-400 mb-1.5 uppercase">İlan Başlığı</label>
                                 <input type="text" value={itemToEdit.title} onChange={(e) => setItemToEdit({...itemToEdit, title: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-cyan-500/50 transition-colors" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-cyan-400 mb-1.5 uppercase">Açıklama</label>
+                                <input type="text" value={itemToEdit.description} onChange={(e) => setItemToEdit({...itemToEdit, description: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-cyan-500/50 transition-colors" />
                             </div>
                             <div>
                                 <label className="block text-xs font-semibold text-cyan-400 mb-1.5 uppercase">Fiyat (₺)</label>
@@ -447,7 +453,7 @@ export default function ProfilePage() {
 
                                 <div className="space-y-4 pt-4 border-t border-white/10">
                                     <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider flex items-center gap-2">
-                                        <Mail size={16} /> İletişim & Eğitim
+                                        <Mail size={16} /> İletişim Bilgileri
                                     </h3>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
@@ -461,37 +467,44 @@ export default function ProfilePage() {
                                                 <input type="tel" value={userData.telephone || ''} onChange={(e) => setUserData({...userData, telephone: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 text-white outline-none focus:border-cyan-500/50 transition-colors" />
                                             </div>
                                         </div>
-
-                                        {userData.account_type === 'student' && (
-                                            <>
-                                                <div className="space-y-1">
-                                                    <div className="flex items-center justify-between mb-1.5">
-                                                        <label className="text-xs font-semibold text-rose-400">Edu Email</label>
-                                                        {userData.is_verified ? (
-                                                            <span className="text-[10px] font-bold bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-md flex items-center gap-1">
-                                                                 <CheckCircle size={10} /> Doğrulandı
-                                                            </span>
-                                                        ) : (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => router.push('/verify-edu')}
-                                                                className="text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30 hover:bg-rose-500 hover:text-white px-2 py-0.5 rounded-md transition-colors"
-                                                            >
-                                                                Hemen Doğrula
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                    <input type="email" value={userData.edu_email || ''} disabled className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-3 text-gray-400 cursor-not-allowed" />
-                                                </div>
-
-                                                <div className="space-y-1">
-                                                    <label className="block text-xs font-semibold text-gray-400 mb-1.5">Üniversite</label>
-                                                    <input type="text" value={userData.university || ''} onChange={(e) => setUserData({...userData, university: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-cyan-500/50 transition-colors" />
-                                                </div>
-                                            </>
-                                        )}
                                     </div>
                                 </div>
+
+                                {userData.account_type === 'student' && (
+                                    <div className="space-y-4 pt-4 border-t border-white/10">
+                                        <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider flex items-center gap-2">
+                                            <GraduationCap size={16} /> Öğrenci Bilgileri
+                                        </h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div className="space-y-1">
+                                                <label className="block text-xs font-semibold text-gray-400 mb-1.5">Edu Email</label>
+                                                <input type="email" value={userData.edu_email || ''} disabled className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-3 text-gray-400 cursor-not-allowed" />
+
+                                                <div className="pt-2">
+                                                    {userData.is_verified ? (
+                                                        <div className="w-fit text-sm font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-4 py-2.5 rounded-xl flex items-center justify-center gap-2">
+                                                            <CheckCircle size={18} /> Doğrulandı
+                                                        </div>
+                                                    ) : (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => router.push('/verify-edu')}
+                                                            className="relative w-full text-sm font-bold bg-purple-600 hover:bg-purple-500 border border-purple-500 text-white px-4 py-3 rounded-xl transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_0_25px_rgba(168,85,247,0.5)] active:translate-y-0 overflow-hidden group flex justify-center items-center gap-2"
+                                                        >
+                                                            <span className="absolute w-0 h-0 transition-all duration-560 ease-out bg-white rounded-full group-hover:w-100 group-hover:h-100 opacity-10"></span>
+                                                            <span className="relative z-10 flex items-center gap-2">Hemen Doğrula</span>
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-1">
+                                                <label className="block text-xs font-semibold text-gray-400 mb-1.5">Üniversite</label>
+                                                <input type="text" value={userData.university || ''} onChange={(e) => setUserData({...userData, university: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-cyan-500/50 transition-colors" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
 
                                 {userData.auth_provider === 'local' && (
                                     <div className="space-y-4 pt-4 border-t border-white/10">
