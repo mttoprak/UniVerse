@@ -1,12 +1,18 @@
 import { Router } from "express"
 import { register, login, completeProfile, getMe } from "../controllers/auth.controller"
 import { authMiddleware } from "../middleware/middleware"
-import {sendVerification} from "../controllers/verification.controller";
+import {sendEduVerification, sendVerification, verifyEduMail} from "../controllers/verification.controller";
 
 const router = Router()
 
 // POST /api/auth/sendVerification   → Sending Email verification
 router.post("/sendVerification", sendVerification)
+
+// POST /api/auth/sendEduVerification   → Sending Edu-Email verification
+router.post("/sendEduVerification", authMiddleware, sendEduVerification)
+
+// POST /api/auth/verifyEduMail   → Verify Edu-Email
+router.post("/verifyEduMail", authMiddleware, verifyEduMail)
 
 // POST /api/auth/register          → Register
 router.post("/register", register)
