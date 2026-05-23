@@ -7,7 +7,7 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "UniVerse | Öğrenci Ekosistemi",
-  description: "Kampüs içi ilan, ders ve carpooling platformu",
+  description: "Kampüs içi ekosistem platformu.",
 };
 
 export default function RootLayout({

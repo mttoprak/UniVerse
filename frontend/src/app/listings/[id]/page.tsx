@@ -5,30 +5,6 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { ChevronLeft, Heart, Share2, MessageSquare, MapPin, Calendar, User, ShieldCheck, Tag, Info, Loader2, Eye, AlertTriangle } from 'lucide-react';
 
-// --- BACKEND ÇÖKERSE VEYA İLAN YOKSA GÖSTERİLECEK MOCK DATA ---
-const MOCK_AD = {
-    _id: "mock-123",
-    title: "Test İlanı",
-    description: "⚠️ DİKKAT: Bu bir test ilanıdır. Sunucuya bağlanılamadığı için örnek veri gösteriliyor.\n\nKlavye 3 ay kullanıldı, tüm tuşları ve RGB ışıkları sorunsuz çalışıyor. Yeni modele geçtiğim için satıyorum. Kutusu ve faturası tam. Sadece elden teslim.",
-    price: 1250,
-    category: "Elektronik",
-    type: "secondhand",
-    location: "Merkez Kampüs",
-    condition: "Yeni Gibi",
-    createdAt: new Date().toISOString(),
-    views: 1337,
-    photos: [
-        "https://images.unsplash.com/photo-1595225476474-87563907a212?w=800&q=80",
-        "https://images.unsplash.com/photo-1511556820780-d912e42b4980?w=800&q=80"
-    ],
-    seller: {
-        username: "ahmetemingenc",
-        edu_email: "ahmet@ogr.university.edu.tr",
-        university: "Ege Üniversitesi",
-        profile_photo: ""
-    }
-};
-
 export default function AdDetailPage() {
     const params = useParams();
     const router = useRouter();
@@ -101,9 +77,7 @@ export default function AdDetailPage() {
                 }
 
             } catch (err: any) {
-                console.warn("Backend hatası yakalandı. Mock Data yükleniyor...", err);
-                setAd(MOCK_AD);
-                setIsMockData(true);
+                console.warn("Backend hatası yakalandı. Lütfen yeniden deneyin...", err);
             } finally {
                 setIsLoading(false);
             }
@@ -112,7 +86,7 @@ export default function AdDetailPage() {
         fetchAdDetailsAndFavorites();
     }, [id, router]);
 
-    // FAVORİ TOGGLE İŞLEMİ (Ekle/Çıkar)
+    // favorite toggle
     const handleToggleFavorite = async () => {
         const token = localStorage.getItem('accessToken');
         if (!token) {
@@ -120,7 +94,7 @@ export default function AdDetailPage() {
             return;
         }
 
-        // Optimistic UI: Kullanıcıyı bekletmemek için arayüzü anında güncelle
+        // optimistic UI: update the interface instantly to avoid keeping the user waiting
         const previousState = isFavorite;
         setIsFavorite(!isFavorite);
 
@@ -134,18 +108,18 @@ export default function AdDetailPage() {
             });
 
             if (!response.ok) {
-                // Eğer istek başarısız olursa UI'ı eski haline döndür
+                // if the request fails, revert the UI to its previous state
                 setIsFavorite(previousState);
                 console.error("Favori işlemi başarısız oldu.");
             }
         } catch (error) {
-            // Sunucuya ulaşılamazsa UI'ı eski haline döndür
+            // if the server is unreachable, revert the UI to its previous state
             setIsFavorite(previousState);
             console.error("Favori güncellenirken sunucu hatası:", error);
         }
     };
 
-    // Loading State UI
+    // loading state UI
     if (isLoading) {
         return (
             <div className="min-h-screen pt-28 flex flex-col items-center justify-center">
@@ -165,7 +139,7 @@ export default function AdDetailPage() {
 
     const seller = ad.owner || ad.seller;
 
-    // MVP Mesajlaşma Yöntemi: E-posta Yönlendirmesi
+    // temp
     const handleContactSeller = () => {
         const targetEmail = seller?.edu_email || seller?.email || "";
         if (!targetEmail) {
@@ -321,7 +295,6 @@ export default function AdDetailPage() {
                                 </div>
                             )}
 
-                            {/* MVP İletişim Butonu */}
                             <button
                                 onClick={handleContactSeller}
                                 className="w-full flex items-center justify-center space-x-2 bg-cyan-600 hover:bg-cyan-500 text-[#0B0F19] py-4 rounded-xl font-black uppercase tracking-widest transition-all shadow-[0_10px_20px_rgba(34,211,238,0.2)]"

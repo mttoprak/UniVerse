@@ -9,6 +9,7 @@ interface Advert {
     title: string;
     price: number | string;
     category: string;
+    type: string;
     location: string;
     createdAt: string;
     photos?: string[];
@@ -38,11 +39,22 @@ export default function FeedPage() {
         { id: 'popular', label: 'En Popüler' }
     ];
 
-    const handleCategoryToggle = (category: string) => {
+    // Backend'deki 7 Ana Kategori (Type bazlı veya alt kategori)
+    const categoryOptions = [
+        { id: 'secondhand', label: 'İkinci El Eşya' },
+        { id: 'roommate', label: 'Ev / Oda Arkadaşı' },
+        { id: 'job', label: 'İş / Staj' },
+        { id: 'scholarship', label: 'Burs' },
+        { id: 'carpooling', label: 'Yol Arkadaşı' },
+        { id: 'course', label: 'Özel Ders' },
+        { id: 'textbooks_and_notes', label: 'Ders Notu / Kitap' }
+    ];
+
+    const handleCategoryToggle = (categoryId: string) => {
         setSelectedCategories(prev =>
-            prev.includes(category)
-                ? prev.filter(c => c !== category)
-                : [...prev, category]
+            prev.includes(categoryId)
+                ? prev.filter(c => c !== categoryId)
+                : [...prev, categoryId]
         );
     };
 
@@ -59,15 +71,18 @@ export default function FeedPage() {
 
             const queryParams = new URLSearchParams();
 
-            // MVP TAKTİĞİ: /feed rotası boş dönme ihtimaline karşı her zaman çalışan ana rotayı (/api/listing) kullanıyoruz!
             let API_URL = 'http://localhost:5000/api/listing';
 
+            // Parametreleri Ekle
             if (searchQuery) queryParams.append('q', searchQuery);
-            if (selectedCategories.length > 0) queryParams.append('category', selectedCategories.join(','));
+
+            // Eğer kategori veya type seçildiyse (backend'in okuma mantığına göre tek string olarak)
+            if (selectedCategories.length > 0) {
+                queryParams.append('type', selectedCategories.join(','));
+            }
+
             if (minPrice) queryParams.append('min_price', minPrice);
             if (maxPrice) queryParams.append('max_price', maxPrice);
-
-            // Sıralama her zaman gönderiliyor (Varsayılan: 'newest')
             queryParams.append('sort', sortBy);
 
             API_URL = `${API_URL}?${queryParams.toString()}`;
@@ -103,7 +118,12 @@ export default function FeedPage() {
                 return;
             }
 
-            setAdverts(data.listings || []);
+            const allListings = data.listings || [];
+
+            // FRONTEND GÜVENLİK FİLTRESİ: Acil ilanları GÖSTERME (!ad.is_urgent)
+            const standardListings = allListings.filter((ad: Advert) => !ad.is_urgent);
+
+            setAdverts(standardListings);
 
         } catch (err: any) {
             console.error("Fetch Hatası:", err);
@@ -114,17 +134,24 @@ export default function FeedPage() {
         }
     };
 
+    // Filtreler değiştiğinde tetikleme (Debounce)
     useEffect(() => {
         const delayDebounceFn = setTimeout(() => {
             fetchAdverts();
-        }, 400);
+        }, 500); // Fiyat veya arama yazarken fazla istek gitmemesi için gecikme
 
         return () => clearTimeout(delayDebounceFn);
-    }, [searchQuery, sortBy, selectedCategories, minPrice, maxPrice]);
+    }, [searchQuery, sortBy, selectedCategories]);
 
     const formatDate = (dateString: string) => {
         const options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' };
         return new Date(dateString).toLocaleDateString('tr-TR', options);
+    };
+
+    // Kategori ismini okunabilir hale getiren yardımcı fonksiyon
+    const getCategoryName = (advert: Advert) => {
+        const found = categoryOptions.find(opt => opt.id === advert.type || opt.id === advert.category);
+        return found ? found.label : (advert.category || advert.type || 'İlan');
     };
 
     return (
@@ -157,19 +184,19 @@ export default function FeedPage() {
                             />
                         </div>
 
-                        {/* Categories */}
+                        {/* Categories (7 MVP Categories) */}
                         <div className="space-y-3">
                             <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Kategoriler</h3>
-                            {['textbooks_and_notes', 'electronics', 'dorm_items'].map((cat) => (
-                                <label key={cat} className="flex items-center space-x-3 cursor-pointer group">
+                            {categoryOptions.map((cat) => (
+                                <label key={cat.id} className="flex items-center space-x-3 cursor-pointer group">
                                     <input
                                         type="checkbox"
-                                        checked={selectedCategories.includes(cat)}
-                                        onChange={() => handleCategoryToggle(cat)}
-                                        className="form-checkbox bg-black/50 border-white/20 rounded text-cyan-500 focus:ring-cyan-500/30"
+                                        checked={selectedCategories.includes(cat.id)}
+                                        onChange={() => handleCategoryToggle(cat.id)}
+                                        className="form-checkbox w-4 h-4 bg-black/50 border-white/20 rounded accent-cyan-500 cursor-pointer"
                                     />
                                     <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
-                                        {cat === 'textbooks_and_notes' ? 'Ders Kitabı & Not' : cat === 'electronics' ? 'Elektronik' : 'Yurt Eşyası'}
+                                        {cat.label}
                                     </span>
                                 </label>
                             ))}
@@ -184,7 +211,7 @@ export default function FeedPage() {
                                     placeholder="Min ₺"
                                     value={minPrice}
                                     onChange={(e) => setMinPrice(e.target.value)}
-                                    className="w-1/2 bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-sm text-gray-200 outline-none focus:border-cyan-500/50"
+                                    className="w-1/2 bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-sm text-gray-200 outline-none focus:border-cyan-500/50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                 />
                                 <span className="text-gray-500">-</span>
                                 <input
@@ -192,19 +219,19 @@ export default function FeedPage() {
                                     placeholder="Max ₺"
                                     value={maxPrice}
                                     onChange={(e) => setMaxPrice(e.target.value)}
-                                    className="w-1/2 bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-sm text-gray-200 outline-none focus:border-cyan-500/50"
+                                    className="w-1/2 bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-sm text-gray-200 outline-none focus:border-cyan-500/50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                 />
                             </div>
                         </div>
 
                         <div className="h-px w-full bg-white/5 my-6"></div>
 
-                        {/* Apply Button */}
+                        {/* Apply Filters Button */}
                         <button
-                            onClick={() => fetchAdverts(true)}
+                            onClick={() => fetchAdverts()}
                             className="w-full py-3 bg-cyan-600/20 hover:bg-cyan-600/40 border border-cyan-500/30 rounded-xl text-cyan-300 font-bold transition-all shadow-[0_0_15px_rgba(34,211,238,0.1)] hover:shadow-[0_0_20px_rgba(34,211,238,0.2)]"
                         >
-                            Filtreleri Uygula
+                            Fiyatı Uygula
                         </button>
                     </div>
                 </aside>
@@ -215,7 +242,7 @@ export default function FeedPage() {
                     {/* Top Bar for Sorting */}
                     <div className="flex items-center justify-between mb-6 bg-black/20 backdrop-blur-md border border-white/5 rounded-2xl p-4 relative z-30">
                         <p className="text-sm text-gray-400">
-                            {isLoading ? 'Yükleniyor...' : `${adverts.length} aktif ilan bulundu`}
+                            {isLoading ? 'Yükleniyor...' : `${adverts.length} ilan bulundu`}
                         </p>
 
                         {/* Sort Dropdown */}
@@ -258,7 +285,7 @@ export default function FeedPage() {
 
                     {/* Advert Grid  */}
                     {!isLoading && adverts.length === 0 && !error ? (
-                        <div className="w-full py-20 flex flex-col items-center justify-center border border-dashed border-white/10 rounded-3xl">
+                        <div className="w-full py-20 flex flex-col items-center justify-center border border-dashed border-white/10 rounded-3xl bg-black/20">
                             <Search size={48} className="text-gray-600 mb-4" />
                             <h3 className="text-xl font-bold text-white mb-2">İlan Bulunamadı</h3>
                             <p className="text-gray-400 text-sm">Filtreleri değiştirerek tekrar deneyin.</p>
@@ -269,15 +296,8 @@ export default function FeedPage() {
                                 <div
                                     key={advert._id}
                                     onClick={() => router.push(`/listings/${advert._id}`)}
-                                    className={`group bg-white/5 backdrop-blur-md border ${advert.is_urgent ? 'border-rose-500/40' : 'border-white/10'} hover:border-cyan-500/30 rounded-2xl overflow-hidden transition-all hover:transform hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(34,211,238,0.1)] flex flex-col cursor-pointer relative`}
+                                    className={`group bg-white/5 backdrop-blur-md border border-white/10 hover:border-cyan-500/30 rounded-2xl overflow-hidden transition-all hover:transform hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(34,211,238,0.1)] flex flex-col cursor-pointer relative`}
                                 >
-
-                                    {/* Urgent Badge */}
-                                    {advert.is_urgent && (
-                                        <div className="absolute top-0 right-0 bg-rose-500 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-bl-xl z-10 shadow-lg shadow-rose-500/20">
-                                            Acil İlan
-                                        </div>
-                                    )}
 
                                     {/* Image Container */}
                                     <div className="w-full h-48 bg-black/40 relative overflow-hidden flex items-center justify-center border-b border-white/5">
@@ -297,7 +317,7 @@ export default function FeedPage() {
                                         {/* Category Badge overlayed on image */}
                                         <div className="absolute top-3 left-3">
                                             <span className="px-3 py-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-lg text-[10px] font-black uppercase tracking-wider text-cyan-400 shadow-xl">
-                                                {advert.category === 'textbooks_and_notes' ? 'Ders Notu/Kitap' : advert.category}
+                                                {getCategoryName(advert)}
                                             </span>
                                         </div>
                                     </div>
@@ -319,7 +339,7 @@ export default function FeedPage() {
                                         <div className="pt-4 border-t border-white/5 flex flex-col space-y-2">
                                             <div className="flex items-center text-gray-400 text-xs">
                                                 <MapPin size={14} className="mr-1.5 text-cyan-400" />
-                                                <span className="truncate">{advert.location}</span>
+                                                <span className="truncate">{advert.location || "Kampüs İçi"}</span>
                                             </div>
                                             <div className="flex items-center text-gray-500 text-xs">
                                                 <Clock size={14} className="mr-1.5" />
