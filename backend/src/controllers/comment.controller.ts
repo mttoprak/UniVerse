@@ -51,6 +51,16 @@ export const newComment = async (req: Request, res: Response): Promise<any> => {
 
         const targetId = listing.owner.toString()
 
+        // --- YETKİ KONTROLÜ (Öğrenci veya İlan Sahibi değilse engelle) ---
+        const user = await User.findById(authorId)
+        const isUserStudent = (user?.account_type === 'student')
+        const isOwner = (targetId === authorId)
+
+        if (!isUserStudent && !isOwner) {
+            return res.status(403).json({ error: 'Sadece öğrenciler veya ilanın sahibi işlem yapabilir.' })
+        }
+        // -----------------------------------------------------------------
+
         // 2. Kendi ilanına top-level yorum yapılamaz
         //    (reply atabilir — satıcı gelen yorumlara public cevap verebilmeli)
         if (targetId === authorId && !parent) {
@@ -135,6 +145,19 @@ export const getComments = async (req: Request, res: Response): Promise<any> => 
         const { listingId } = req.params
         const { page = '1', limit = '20' } = req.query
 
+        // --- YETKİ KONTROLÜ ---
+        const listing = await Listing.findById(listingId).select('owner')
+        if (!listing) return res.status(404).json({ error: 'İlan bulunamadı' })
+
+        const user = await User.findById(req.userId)
+        const isUserStudent = (user?.account_type === 'student')
+        const isOwner = (listing.owner.toString() === req.userId)
+
+        if (!isUserStudent && !isOwner) {
+            return res.status(403).json({ error: 'Sadece öğrenciler veya ilanın sahibi bu yorumları görebilir.' })
+        }
+        // -----------------------
+
         const pageNum  = Math.max(1, Number(page)  || 1)
         const limitNum = Math.min(50, Math.max(1, Number(limit) || 20))
 
@@ -196,8 +219,18 @@ export const getCommentReplies = async (req: Request, res: Response): Promise<an
     try {
         const { commentId } = req.params
 
-        const parent = await Comment.findById(commentId)
+        const parent = await Comment.findById(commentId).populate('listing', 'owner')
         if (!parent) return res.status(404).json({ error: 'Yorum bulunamadı' })
+
+        // --- YETKİ KONTROLÜ ---
+        const user = await User.findById(req.userId)
+        const isUserStudent = (user?.account_type === 'student')
+        const isOwner = ((parent.listing as any).owner.toString() === req.userId)
+
+        if (!isUserStudent && !isOwner) {
+            return res.status(403).json({ error: 'Sadece öğrenciler veya ilanın sahibi bu yanıtları görebilir.' })
+        }
+        // -----------------------
 
         // Oldest first — konuşma akışı gibi okunur
         const replies = await Comment.find({ parent: commentId })
@@ -217,6 +250,17 @@ export const getUserComments = async (req: Request, res: Response): Promise<any>
     try {
         const { userId } = req.params
         const { page = '1', limit = '20' } = req.query
+
+        // --- YETKİ KONTROLÜ ---
+        const userReq = await User.findById(req.userId)
+        const isUserStudent = (userReq?.account_type === 'student')
+        
+        // Eğer öğrenci değilse ve başkasının profiline (başkasının yorumlarına) bakmaya çalışıyorsa engelle.
+        // Kendi profilindeki (kendi ilanlarına gelen) yorumları görebilir.
+        if (!isUserStudent && userId !== req.userId) {
+            return res.status(403).json({ error: 'Sadece öğrenciler veya kullanıcının kendisi bu yorumları görebilir.' })
+        }
+        // -----------------------
 
         const pageNum  = Math.max(1, Number(page)  || 1)
         const limitNum = Math.min(50, Math.max(1, Number(limit) || 20))
