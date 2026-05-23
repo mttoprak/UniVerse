@@ -3,12 +3,13 @@ import { z } from "zod";
 import bcrypt from "bcryptjs"
 import User from "../models/User"
 import { signAccessToken, signTempToken } from "../utils/token.utils"
-import { localRegisterSchema, loginSchema, completeProfileSchema } from "../validators/auth.validator"
+import { localRegisterSchema, loginSchema, completeProfileSchema, forgotPasswordSchema, verifyResetCodeSchema, resetPasswordSchema } from "../validators/auth.validator"
 import { OAuth2Client } from "google-auth-library"
 import PendingVerification from "../models/PendingVerification";
+import PasswordReset from "../models/PasswordReset";
+import { sendPasswordResetEmail } from "../utils/mail.utils";
 
-
-// ─── LOCAL REGISTER ────────────────────────────────────────────
+// ─── LOCAL REGISTER ──────────────────────────────────────────────────────────
 export const register = async (req: Request, res: Response) => {
     try {
         // 1. Validation with Zod
@@ -68,7 +69,7 @@ export const register = async (req: Request, res: Response) => {
     }
 }
 
-// ─── LOCAL LOGIN ───────────────────────────────────────────────
+// ─── LOCAL LOGIN ──────────────────────────────────────────────────────────
 export const login = async (req: Request, res: Response) => {
     try {
         // 1. Validation with Zod
@@ -116,7 +117,7 @@ export const login = async (req: Request, res: Response) => {
     }
 }
 
-// ─── COMPLETE PROFILE ──────────────────────────────────────────
+// ─── COMPLETE PROFILE ──────────────────────────────────────────────────────
 export const completeProfile = async (req: Request, res: Response) => {
     try {
         // 1. Validation with Zod
@@ -181,4 +182,124 @@ export const getMe = async (req: Request, res: Response) => {
     } catch (e) {
         console.error(e);
         return res.status(500).json({ error: "Server error" })    }
+}
+
+const generateCode = (): string =>
+    Math.floor(100000 + Math.random() * 900000).toString()
+
+// ─── FORGOT PASSWORD ──────────────────────────────────────────────────────
+export const forgotPassword = async (req: Request, res: Response) => {
+    try {
+        const parsed = forgotPasswordSchema.safeParse(req.body)
+        if (!parsed.success) {
+            return res.status(400).json({ errors: z.treeifyError(parsed.error) })
+        }
+
+        const { usernameOrEmail } = parsed.data
+
+        const user = await User.findOne({
+            $or: [
+                { email: usernameOrEmail },
+                { username: usernameOrEmail }
+            ]
+        })
+
+        if (user) {
+            const code = generateCode()
+            const hashedCode = await bcrypt.hash(code, 10)
+            const expires = new Date(Date.now() + 15 * 60 * 1000) // 15 minutes
+
+            await PasswordReset.findOneAndUpdate(
+                { email: user.email },
+                { code: hashedCode, expires },
+                { upsert: true, new: true }
+            )
+
+            await sendPasswordResetEmail(user.email, code)
+            console.log(`[DEV] Password reset code for ${user.email}: ${code}`)
+        }
+
+        return res.status(200).json({ message: "If an account with those details exists, a password reset email has been sent." })
+
+    } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: "Server error" })
+    }
+}
+
+// ─── VERIFY RESET CODE ──────────────────────────────────────────────────────
+export const verifyResetCode = async (req: Request, res: Response) => {
+    try {
+        const parsed = verifyResetCodeSchema.safeParse(req.body)
+        if (!parsed.success) {
+            return res.status(400).json({ errors: z.treeifyError(parsed.error) })
+        }
+
+        const { email, code } = parsed.data
+
+        const resetToken = await PasswordReset.findOne({ email })
+        if (!resetToken) {
+            return res.status(400).json({ error: "Invalid or expired code" })
+        }
+
+        const comparization = await bcrypt.compare(code, resetToken.code);
+        if (!comparization) {
+            // For testing
+            if(process.env.DEVPROCESS == "true" && code==="000000") {
+                // pass
+            } else {
+                return res.status(400).json({ error: "Invalid or expired code" });
+            }
+        }
+
+        return res.status(200).json({ message: "Code verified" })
+
+    } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: "Server error" })
+    }
+}
+
+// ─── RESET PASSWORD ──────────────────────────────────────────────────────
+export const resetPassword = async (req: Request, res: Response) => {
+    try {
+        const parsed = resetPasswordSchema.safeParse(req.body)
+        if (!parsed.success) {
+            return res.status(400).json({ errors: z.treeifyError(parsed.error) })
+        }
+
+        const { email, code, password } = parsed.data
+
+        const resetToken = await PasswordReset.findOne({ email })
+        if (!resetToken) {
+            return res.status(400).json({ error: "Invalid or expired code" })
+        }
+
+        const comparization = await bcrypt.compare(code, resetToken.code);
+        if (!comparization) {
+            if(process.env.DEVPROCESS == "true" && code==="000000") {
+                // pass
+            } else {
+                return res.status(400).json({ error: "Invalid or expired code" });
+            }
+        }
+
+        const user = await User.findOne({ email })
+        if (!user) {
+            return res.status(404).json({ error: "User not found" })
+        }
+
+        user.password = await bcrypt.hash(password, 12)
+        await user.save()
+
+        await PasswordReset.deleteOne({ email })
+
+        // Login the user fully
+        const accessToken = signAccessToken(user._id.toString())
+        return res.status(200).json({ message: "Password reset successful", accessToken, is_complete: user.is_complete })
+
+    } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: "Server error" })
+    }
 }

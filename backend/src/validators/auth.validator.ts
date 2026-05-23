@@ -87,3 +87,18 @@ export const localRegisterValidationSchema = z.object({
 export const sendEduVerificationSchema = z.object({
     code:         z.string().length(6).regex(/^\d{6}$/),  // email
 })
+
+export const forgotPasswordSchema = z.object({
+    usernameOrEmail: z.string().min(1),
+})
+
+export const verifyResetCodeSchema = z.object({
+    email: z.string().email(),
+    code:  z.string().length(6).regex(/^\d{6}$/),
+})
+
+export const resetPasswordSchema = z.object({
+    email:    z.string().email(),
+    code:     z.string().length(6).regex(/^\d{6}$/),
+    password: z.string().min(8),
+})
