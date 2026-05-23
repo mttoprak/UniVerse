@@ -31,3 +31,16 @@ export const sendVerificationEduEmail = async (email: string, code: string) => {
     return data;
 
 }
+
+export const sendPasswordResetEmail = async (email: string, code: string) => {
+    const { data, error } = await resend.emails.send({
+        from: "Universe <no-reply@mttoprak.dev>",
+        to: email,
+        subject: "Password Reset Code",
+        html: `<p>Your password reset code: <strong>${code}</strong></p><p>Expires in 15 minutes.</p>`
+    })
+    if (error) {
+        return error;
+    }
+    return data;
+}
