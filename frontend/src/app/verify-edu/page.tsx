@@ -16,7 +16,7 @@ export default function VerifyEduPage() {
     const [eduEmail, setEduEmail] = useState('');
     const [code, setCode] = useState('');
 
-    // Sayfa açıldığında kullanıcının edu_mail'ini çek
+    // pull the users edu_mail address when the page opens
     useEffect(() => {
         const fetchUserData = async () => {
             const token = localStorage.getItem('accessToken');
@@ -33,7 +33,7 @@ export default function VerifyEduPage() {
                 if (res.ok) {
                     const user = data.user || data;
                     if (user.is_verified) {
-                        router.push('/profile'); // Zaten onaylıysa profile at
+                        router.push('/profile'); // if already verified push to profile
                     }
                     if (user.edu_email) {
                         setEduEmail(user.edu_email);
@@ -49,7 +49,7 @@ export default function VerifyEduPage() {
         fetchUserData();
     }, [router]);
 
-    // 1. AŞAMA: Kodu Gönder
+    // 1. send code
     const handleSendCode = async () => {
         setIsLoading(true);
         setError(null);
@@ -59,7 +59,6 @@ export default function VerifyEduPage() {
             const response = await fetch('http://localhost:5000/api/user/sendEduVerification', {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` }
-                // Mehmet'in dediği gibi body göndermiyoruz!
             });
 
             const data = await response.json();
@@ -77,7 +76,7 @@ export default function VerifyEduPage() {
         }
     };
 
-    // 2. AŞAMA: Kodu Doğrula
+    // 2. verify code
     const handleVerify = async () => {
         if (code.length !== 6) {
             setError("Kod 6 haneli olmalıdır.");
@@ -105,11 +104,8 @@ export default function VerifyEduPage() {
             if (!response.ok) throw new Error(data.message || 'Doğrulama başarısız.');
 
             setSuccessMessage("Tebrikler! Öğrenci hesabınız başarıyla onaylandı.");
-
-            // Onaylandıktan sonra navbarı falan güncellemesi için event fırlat
             window.dispatchEvent(new Event('auth_status_changed'));
 
-            // 2 saniye sonra profile geri yolla
             setTimeout(() => {
                 router.push('/profile');
             }, 2000);
@@ -133,7 +129,7 @@ export default function VerifyEduPage() {
     return (
         <div className="relative min-h-screen pt-24 pb-12 px-4 flex items-center justify-center">
 
-            {/* Background Glow */}
+            {/* background glow */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10 flex items-center justify-center">
                 <div className="w-[50rem] h-[50rem] bg-violet-600/10 rounded-full blur-[200px] mix-blend-screen flex-shrink-0 animate-pulse"></div>
             </div>

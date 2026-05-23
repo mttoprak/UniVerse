@@ -122,7 +122,6 @@ export default function RegisterPage() {
 
             if (formData.account_type === 'student') {
                 if (formData.university) payload.university = formData.university;
-                // Backend'in beklediği edu_email alanını gönderiyoruz
                 if (formData.edu_email) payload.edu_email = formData.edu_email;
             }
             if (formData.birthdate) payload.birthdate = new Date(formData.birthdate);
@@ -162,7 +161,7 @@ export default function RegisterPage() {
 
             <div className="w-full max-w-xl bg-black/40 backdrop-blur-xl border border-white/10 rounded-[2rem] p-8 shadow-[0_0_50px_rgba(34,211,238,0.05)] relative z-10">
 
-                {/* Progress Bar */}
+                {/* progress bar */}
                 <div className="flex items-center justify-between mb-8 relative">
                     <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-white/5 -z-10"></div>
                     <div className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-cyan-500 transition-all duration-500 -z-10" style={{ width: step === 1 ? '0%' : step === 2 ? '50%' : '100%' }}></div>
@@ -180,21 +179,21 @@ export default function RegisterPage() {
                     {step === 1 ? 'Temel bilgilerini girerek hesabını oluştur.' : step === 2 ? 'E-postana gönderilen 6 haneli kodu gir. Spam klasörünü kontrol etmeyi unutma!' : 'Seni daha yakından tanımamız için son birkaç adım.'}
                 </p>
 
-                {/* General Error Alert */}
+                {/* general error alert */}
                 {error && (
                     <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm flex items-center gap-2">
                         <AlertCircle size={18} /> {error}
                     </div>
                 )}
 
-                {/* Success Alert */}
+                {/* success alert */}
                 {successMessage && (
                     <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 text-sm flex items-center gap-2 animate-pulse">
                         <ShieldCheck size={18} /> {successMessage}
                     </div>
                 )}
 
-                {/* STEP 1: BASIC INFO */}
+                {/* step 1: basic info */}
                 {step === 1 && (
                     <div className="space-y-5">
                         <div className="grid grid-cols-2 gap-4">
@@ -243,7 +242,7 @@ export default function RegisterPage() {
                     </div>
                 )}
 
-                {/* STEP 2: VERIFICATION */}
+                {/* step 2: verification */}
                 {step === 2 && (
                     <div className="space-y-6">
                         <div className="space-y-1 text-center">
@@ -260,7 +259,7 @@ export default function RegisterPage() {
                     </div>
                 )}
 
-                {/* STEP 3: COMPLETE PROFILE */}
+                {/* step 3: complete profile */}
                 {step === 3 && (
                     <div className="space-y-5">
                         <div className="space-y-1">

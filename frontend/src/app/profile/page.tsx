@@ -22,22 +22,19 @@ export default function ProfilePage() {
     const [myAdverts, setMyAdverts] = useState<Advert[]>([]);
     const [myFavorites, setMyFavorites] = useState<any[]>([]);
 
-    // Global UI States
     const [pageLoading, setPageLoading] = useState(true);
     const [tabLoading, setTabLoading] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-    // Modal States
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
     const [itemToDelete, setItemToDelete] = useState<string | null>(null);
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [itemToEdit, setItemToEdit] = useState<any>(null);
 
-    // Şifre güncelleme için state
     const [newPassword, setNewPassword] = useState('');
 
-    // 1. KULLANICI VERİLERİNİ ÇEK (İlk Yükleme)
+    // pull the users info
     useEffect(() => {
         const fetchInitialData = async () => {
             const token = localStorage.getItem('accessToken');
@@ -57,13 +54,13 @@ export default function ProfilePage() {
 
                 const currentProfile = userDataJson.user || userDataJson;
 
-                // Tarih formatı düzeltmesi
+                // date format correction
                 if (currentProfile.birthdate) {
                     currentProfile.birthdate = new Date(currentProfile.birthdate).toISOString().split('T')[0];
                 }
                 setUserData(currentProfile);
 
-                // İlanları Çek
+                // pull the listings
                 const listingsRes = await fetch('http://localhost:5000/api/listing', {
                     method: 'GET',
                     headers: { 'Authorization': `Bearer ${token}` }
@@ -87,7 +84,7 @@ export default function ProfilePage() {
         fetchInitialData();
     }, [router]);
 
-    // 2. FAVORİLERİ GETİR (Sekme değişince)
+    // get favorites
     useEffect(() => {
         if (activeTab === 'favorites' && userData) {
             const fetchFavorites = async () => {
@@ -117,7 +114,7 @@ export default function ProfilePage() {
         }
     }, [toastMessage]);
 
-    // SİLME
+    // delete
     const confirmDelete = (id: string) => { setItemToDelete(id); setDeleteModalOpen(true); };
     const executeDelete = async () => {
         if (!itemToDelete) return;
@@ -141,7 +138,7 @@ export default function ProfilePage() {
         }
     };
 
-    // DÜZENLEME
+    // update
     const openEditModal = (advert: any) => { setItemToEdit({ ...advert }); setEditModalOpen(true); };
     const saveEdit = async () => {
         if (!itemToEdit) return;
@@ -174,7 +171,7 @@ export default function ProfilePage() {
         }
     };
 
-    // PROFİL GÜNCELLEME
+    // profile update
     const handleProfileUpdate = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
@@ -251,7 +248,7 @@ export default function ProfilePage() {
     return (
         <div className="min-h-screen pt-24 pb-12 px-4 md:px-8 max-w-6xl mx-auto flex flex-col relative text-gray-100">
 
-            {/* Toast Notification */}
+            {/* toast notification */}
             {toastMessage && (
                 <div className="fixed bottom-6 right-6 z-[9999] animate-in slide-in-from-bottom-5 fade-in duration-300 flex items-center gap-3 bg-cyan-900/90 border border-cyan-500/50 backdrop-blur-md px-5 py-3 rounded-2xl shadow-[0_0_20px_rgba(34,211,238,0.2)]">
                     <CheckCircle className="text-cyan-400" size={20} />
@@ -259,7 +256,7 @@ export default function ProfilePage() {
                 </div>
             )}
 
-            {/* Delete Modal */}
+            {/* delete modal */}
             {deleteModalOpen && (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
                     <div className="bg-[#0B0F19] border border-rose-500/30 rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
@@ -274,7 +271,7 @@ export default function ProfilePage() {
                 </div>
             )}
 
-            {/* Edit Modal */}
+            {/* edit modal */}
             {editModalOpen && itemToEdit && (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
                     <div className="bg-[#0B0F19] border border-cyan-500/30 rounded-3xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden">
@@ -301,7 +298,7 @@ export default function ProfilePage() {
                 </div>
             )}
 
-            {/* Top Section: Profile Card */}
+            {/* top section: profile card */}
             <div className="bg-[#0B0F19]/80 backdrop-blur-xl border border-white/10 rounded-3xl overflow-hidden mb-8">
                 <div className="h-32 md:h-48 w-full bg-gradient-to-r from-cyan-900/40 via-blue-900/40 to-rose-900/40 relative">
                     <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20 mix-blend-overlay"></div>
@@ -345,7 +342,7 @@ export default function ProfilePage() {
                 </div>
             </div>
 
-            {/* Bottom Section */}
+            {/* bottom section */}
             <div className="flex flex-col md:flex-row gap-8">
 
                 <div className="w-full md:w-72 flex flex-col gap-2">

@@ -11,7 +11,7 @@ import {
 
 const categories = [
     { id: 'secondhand', title: 'İkinci El Satış', icon: ShoppingBag, requiresStudent: true, color: 'text-rose-400', border: 'border-rose-500/30', bg: 'hover:bg-rose-500/10', previewBg: 'bg-rose-500', previewText: 'text-rose-400', previewPillBg: 'bg-rose-500/10', previewBorder: 'border-rose-500/20' },
-    { id: 'roommate', title: 'Ev/Oda Arkadaşı', icon: Home, requiresStudent: true, color: 'text-teal-400', border: 'border-teal-500/30', bg: 'hover:bg-teal-500/10', previewBg: 'bg-teal-500', previewText: 'text-teal-400', previewPillBg: 'bg-teal-500/10', previewBorder: 'border-teal-500/20' },
+    { id: 'roommate', title: 'Ev / Oda Arkadaşı', icon: Home, requiresStudent: true, color: 'text-teal-400', border: 'border-teal-500/30', bg: 'hover:bg-teal-500/10', previewBg: 'bg-teal-500', previewText: 'text-teal-400', previewPillBg: 'bg-teal-500/10', previewBorder: 'border-teal-500/20' },
     { id: 'job', title: 'İş / Staj', icon: Briefcase, requiresStudent: false,  color: 'text-blue-400', border: 'border-blue-500/30', bg: 'hover:bg-blue-500/10', previewBg: 'bg-blue-500', previewText: 'text-blue-400', previewPillBg: 'bg-blue-500/10', previewBorder: 'border-blue-500/20' },
     { id: 'emergency', title: 'Acil İlan', icon: AlertTriangle, requiresStudent: false, color: 'text-red-500', border: 'border-red-500/50', bg: 'hover:bg-red-500/20 shadow-[0_0_15px_rgba(239,68,68,0.2)]', previewBg: 'bg-red-500', previewText: 'text-red-500', previewPillBg: 'bg-red-500/10', previewBorder: 'border-red-500/20' },
     { id: 'scholarship', title: 'Burs', icon: Award, requiresStudent: false, color: 'text-yellow-400', border: 'border-yellow-500/30', bg: 'hover:bg-yellow-500/10', previewBg: 'bg-yellow-500', previewText: 'text-yellow-400', previewPillBg: 'bg-yellow-500/10', previewBorder: 'border-yellow-500/20' },
@@ -37,26 +37,26 @@ export default function CreateListingWizard() {
     const [mediaFiles, setMediaFiles] = useState<File[]>([]);
     const [mediaPreviews, setMediaPreviews] = useState<{url: string, type: string}[]>([]);
 
-    // ZOD UYUMLU FORM STATELERİ
+    // form states
     const [formData, setFormData] = useState({
         title: '', description: '', price: '',
 
-        // Carpool
+        // carpool
         origin: '', destination: '', departure_date: '', available_seats: '',
 
-        // Job & Scholarship
+        // job and scholarship
         application_url: '', deadline: '',
 
-        // Roommate
+        // roommate
         smoking_allowed: 'not_allowed', pet_friendly: 'no', gender_preference: 'no_preference',
 
-        // Course (Tutoring)
+        // course
         subject: '', format: '', // online, in_person
 
-        // Secondhand & Notes
+        // secondhand and notes
         condition: '', // new, like_new, good, fair
-        secondhandCategory: '', // Zod Enum'a göre
-        subcategory: '' // Ders notu için ders kodu
+        secondhandCategory: '', // temp
+        subcategory: '' // class code
     });
 
     const [districts, setDistricts] = useState<string[]>([]);
@@ -100,7 +100,7 @@ export default function CreateListingWizard() {
         fetchDistricts();
     }, [selectedCityId]);
 
-    // ZOD'A GÖRE ADIM 2 KONTROLLERİ
+    // stem 2 checks according to Zod
     const isStep2Valid = () => {
         if (!formData.title.trim() || !formData.description.trim()) return false;
         switch (selectedCat) {
@@ -151,7 +151,7 @@ export default function CreateListingWizard() {
         setMediaPreviews(prev => prev.filter((_, i) => i !== index));
     };
 
-    // ZOD'A GÖRE PAYLOAD OLUŞTURMA
+    // creating a payload according to Zod
     const submitListing = async () => {
         setIsSubmitting(true);
         setSubmitStatus('idle');
@@ -163,18 +163,17 @@ export default function CreateListingWizard() {
 
             const submitData = new FormData();
 
-            // Zod Discriminator Belirleme
             let schemaType = selectedCat;
             if (selectedCat === 'carpool') schemaType = 'carpooling';
             if (selectedCat === 'tutoring' || selectedCat === 'notes') schemaType = 'course';
-            if (selectedCat === 'notes') schemaType = 'secondhand'; // Ders notu secondhand olarak gider
+            if (selectedCat === 'notes') schemaType = 'secondhand'; // temp
 
             submitData.append('type', schemaType || 'secondhand');
             submitData.append('title', formData.title);
             submitData.append('description', formData.description);
             submitData.append('price', formData.price || '0');
 
-            // Lokasyon İşleme
+            // location process
             let finalLocation = 'Kampüs İçi';
             if (city && district) {
                 finalLocation = `${district}, ${city}`;
@@ -183,7 +182,7 @@ export default function CreateListingWizard() {
             }
             submitData.append('location', finalLocation);
 
-            // TİPE ÖZEL ZOD ALANLARI
+            // type-specific Zod areas
             if (schemaType === 'secondhand') {
                 submitData.append('condition', formData.condition); // new, like_new, good, fair
                 submitData.append('category', selectedCat === 'notes' ? 'textbooks_and_notes' : formData.secondhandCategory);
@@ -202,14 +201,14 @@ export default function CreateListingWizard() {
             }
             else if (schemaType === 'course') {
                 submitData.append('subject', formData.subject);
-                submitData.append('format', formData.format); // online, in_person
+                submitData.append('format', formData.format);
             }
             else if (schemaType === 'job' || schemaType === 'scholarship') {
                 if (formData.application_url) submitData.append('application_url', formData.application_url);
                 if (formData.deadline) submitData.append('deadline', new Date(formData.deadline).toISOString());
             }
 
-            // Dosyalar
+            // files
             mediaFiles.forEach(file => { submitData.append('photos', file); });
 
             const response = await fetch('http://localhost:5000/api/listing', {
@@ -427,7 +426,7 @@ export default function CreateListingWizard() {
                             </div>
                         )}
 
-                        {/* COURSE (Tutoring) */}
+                        {/* COURSE */}
                         {selectedCat === 'tutoring' && (
                             <div className="grid grid-cols-2 gap-4 animate-in zoom-in-95 duration-300 border-l-2 border-indigo-500 pl-4">
                                 <div className="space-y-2">

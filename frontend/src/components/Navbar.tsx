@@ -41,10 +41,10 @@ export default function Navbar() {
     return (
         <nav className="fixed w-full z-50 top-0 backdrop-blur-xl bg-[#0B0F19]/60 shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
 
-            {/* TAVAN IŞIKLANDIRMASI (Tüm Navbar'a yayılan Cyan ve Violet Gradyanı) */}
+            {/* gradient */}
             <div className="absolute inset-0 w-full h-full pointer-events-none bg-gradient-to-r from-cyan-500/10 via-transparent to-violet-500/10 opacity-90" />
 
-            {/* ALT ÇİZGİ NEON EFEKTİ */}
+            {/* neon effect */}
             <div className="absolute bottom-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-cyan-500/20 to-violet-500/20" />
 
             <div className="max-w-[1440px] mx-auto px-6 relative z-10">

@@ -130,7 +130,7 @@ export default function ForgotPasswordPage() {
     return (
         <div className="min-h-screen flex items-center justify-center p-4 relative text-gray-100">
 
-            {/* Sonsuz Arkaplan Katmanı */}
+            {/* background */}
             <div className="fixed inset-0 bg-[#0B0F19] -z-20"></div>
 
             <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10">
@@ -138,7 +138,7 @@ export default function ForgotPasswordPage() {
                 <div className="absolute bottom-[-20%] right-[-10%] w-[60vw] h-[60vw] min-w-[500px] min-h-[500px] bg-purple-500/10 rounded-full blur-[150px] mix-blend-screen"></div>
             </div>
 
-            {/* İçerik Katmanı */}
+            {/* no content layer */}
             <div className="w-full max-w-md z-10">
                 <Link href="/login" className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors mb-6 group">
                     <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" />

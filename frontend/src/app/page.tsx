@@ -57,7 +57,7 @@ export default function Home() {
 
     return (
         <>
-            {/* GLOBAL ARKAPLAN (Ekrandan asla dışarı taşmaz veya kesilmez) */}
+            {/* background */}
             <div
                 className="fixed inset-0 w-full h-full -z-50 pointer-events-none"
                 style={{
@@ -71,10 +71,10 @@ export default function Home() {
                 }}
             />
 
-            {/* ANA İÇERİK */}
+            {/* main content */}
             <div className="flex flex-col items-center w-full min-h-screen pb-24">
 
-                {/* 1. HERO ALANI */}
+                {/* hero section */}
                 <div className="relative w-full flex flex-col items-center text-center mt-20 mb-40 px-4">
                     <h1 className="text-6xl md:text-7xl font-black tracking-tight text-white leading-tight max-w-4xl mx-auto">
                         Kampüsün <span className="bg-gradient-to-r from-cyan-400 via-violet-500 to-fuchsia-500 text-transparent bg-clip-text drop-shadow-[0_0_15px_rgba(124,58,237,0.5)]">Ekosistemi</span>
@@ -97,7 +97,7 @@ export default function Home() {
 
                 <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 flex flex-col gap-40 relative z-10">
 
-                    {/* 2. ACİL İLANLAR VİTRİNİ */}
+                    {/* flash-listing feed */}
                     {urgentListings.length > 0 && (
                         <section className="w-full">
                             <div className="flex items-end justify-between mb-10">
@@ -111,7 +111,7 @@ export default function Home() {
                                             Acil İlanlar
                                         </h2>
                                     </div>
-                                    <p className="text-gray-400 font-medium ml-7">Birilerinin yardıma ihtiyacı var ya da acilen bir şeyler satıyor!</p>
+                                    <p className="text-gray-400 font-medium ml-7">Birilerinin yardıma ihtiyacı var!</p>
                                 </div>
                                 <Link href="/emergencies-feed" className="hidden sm:flex items-center text-rose-400 hover:text-rose-300 font-bold group transition-colors">
                                     Tümünü Gör <ChevronRight size={20} className="ml-1 group-hover:translate-x-1 transition-transform" />
@@ -153,7 +153,7 @@ export default function Home() {
                         </section>
                     )}
 
-                    {/* 3. POPÜLER İLANLAR VİTRİNİ */}
+                    {/* popular listings feed */}
                     {popularListings.length > 0 && (
                         <section className="w-full">
                             <div className="flex items-end justify-between mb-10">
