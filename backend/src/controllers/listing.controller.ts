@@ -60,16 +60,31 @@ export const createListing = async (req: Request, res: Response): Promise<any> =
 
 export const getListing = async (req: Request, res: Response): Promise<any> => {
     try {
-        const listing = await Listing
-            .findByIdAndUpdate(
-                req.params.id,
-                { $inc: { views: 1 } },  // atomik view sayacı
-                { new: true }
-            )
-            .populate('owner', 'username avatar')
+        let listing = await Listing.findById(req.params.id).populate('owner', 'username avatar account_type');
 
         if (!listing)
             return res.status(404).json({ error: 'Listing not found' })
+
+        // 1. Yetki Kontrolü: Kullanıcıyı bulup rolüne bakıyoruz
+        let isStudent = false;
+        if (req.userId) {
+            const user = await User.findById(req.userId);
+            isStudent = (user?.account_type === 'student');
+        }
+
+        // owner populate edildiği için _id sini string olarak alıyoruz
+        const ownerId = (listing.owner as any)?._id?.toString() || listing.owner?.toString();
+        const isOwner = (req.userId === ownerId);
+
+        // Öğrenci değilse ve ilanın sahibi değilse RET!
+        if (!isStudent && !isOwner) {
+            // return res.status(403).json({ error: 'Sadece öğrenciler veya ilanın sahibi bu ilanı görüntüleyebilir.' });
+            return res.status(403).json({ error: 'Only students or the owner of the listing can view this listing.' });
+        }
+
+        // 2. Yetki verildikten sonra views (görüntülenme) sayısını artır
+        await Listing.findByIdAndUpdate(req.params.id, { $inc: { views: 1 } });
+        listing.views += 1;
 
         let is_favorited = false;
         if (req.userId) {
@@ -161,6 +176,21 @@ export const getUserListings = async (req: Request, res: Response): Promise<any>
         return res.json({ listings })
     } catch (error) {
         console.error('Get user listings error:', error)
+        return res.status(500).json({ error: 'Server error' })
+    }
+}
+
+// ─── MY LISTINGS (OWNER'S LISTINGS) ────────────────────────────────────────
+
+export const getMyListings = async (req: Request, res: Response): Promise<any> => {
+    try {
+        const listings = await Listing
+            .find({ owner: req.userId })
+            .sort({ createdAt: -1 })
+
+        return res.json({ listings })
+    } catch (error) {
+        console.error('Get my listings error:', error)
         return res.status(500).json({ error: 'Server error' })
     }
 }
