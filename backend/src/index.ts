@@ -19,10 +19,10 @@ import cors from "cors"
 import authRouter from "./routes/auth.router"
 import testRouter from './routes/test.router';
 import userRouter from "./routes/user.router"
-import {Resend} from "resend";
 import miscRouter from "./routes/misc.router";
 import listingRouter from "./routes/listing.router";
 import commendRouter from "./routes/commend.router";
+import { startExpiredListingsCron } from "./cron/expiredListings.job";
 
 
 const app = express()
@@ -70,6 +70,10 @@ mongoose.connection.on("disconnected", () => {
 const start = async () => {
     try {
         await connect()
+
+        // Zamanlanmış görevleri başlat
+        startExpiredListingsCron();
+
         app.listen(PORT, () => {
             console.log(`Server running on http://localhost:${PORT}`)
         })

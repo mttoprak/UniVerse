@@ -36,10 +36,11 @@ export const createListing = async (req: Request, res: Response): Promise<any> =
             photos = uploaded.map(f => f.url)
         }
 
-        let expiresDate = undefined;
-        if (parsed.data.is_urgent && parsed.data.expires) {
-            expiresDate = new Date();
-            expiresDate.setHours(expiresDate.getHours() + parsed.data.expires);
+        let expiresDate = new Date();
+        if (parsed.data.is_urgent) {
+            expiresDate.setHours(expiresDate.getHours() + (parsed.data.expires || 24) ); // Acil ilanlar 24 saat
+        } else {
+            expiresDate.setMonth(expiresDate.getMonth() + 1); // Normal ilanlar 1 ay
         }
 
         const listing = await Listing.create({
@@ -113,7 +114,13 @@ export const getListings = async (req: Request, res: Response): Promise<any> => 
         const pageNum = Math.max(1, Number(page) || 1)
         const limitNum = Math.max(1, Number(limit) || 20)
 
-        const filter: Record<string, any> = { status: 'active' }
+        const filter: Record<string, any> = {
+            status: 'active',
+            $or: [
+                { expires: { $gt: new Date() } },
+                { expires: { $exists: false } } // Eskiden kalma, expires değeri olmayan test ilanlarını da göstermek için
+            ]
+        }
 
         if (q)        filter.$text     = { $search: q as string }
         if (type)     filter.type      = type
@@ -152,7 +159,14 @@ export const getFeedListings = async (req: Request, res: Response): Promise<any>
         const limitNum = Math.max(1, Number(limit) || 20)
 
         const listings = await Listing
-            .find({ status: 'active', is_urgent: false })
+            .find({
+                status: 'active',
+                is_urgent: false,
+                $or: [
+                    { expires: { $gt: new Date() } },
+                    { expires: { $exists: false } }
+                ]
+            })
             .sort({ createdAt: -1 })
             .skip((pageNum - 1) * limitNum)
             .limit(limitNum)
@@ -170,7 +184,14 @@ export const getFeedListings = async (req: Request, res: Response): Promise<any>
 export const getUserListings = async (req: Request, res: Response): Promise<any> => {
     try {
         const listings = await Listing
-            .find({ owner: req.params.uID, status: 'active' })
+            .find({
+                owner: req.params.uID,
+                status: 'active',
+                $or: [
+                    { expires: { $gt: new Date() } },
+                    { expires: { $exists: false } }
+                ]
+            })
             .sort({ createdAt: -1 })
 
         return res.json({ listings })
