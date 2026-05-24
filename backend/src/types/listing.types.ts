@@ -11,7 +11,7 @@ export interface IBaseListing {
     photos: string[]
     price: number
     status: 'active' | 'sold' | 'closed' | 'expired'
-    expires: Date
+    expires: number
     is_urgent: boolean
     views: number
     save_count: number
