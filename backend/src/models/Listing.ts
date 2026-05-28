@@ -54,6 +54,12 @@ const listingSchema = new mongoose.Schema(
             type: Number,
             default: 0,
             min: 0
+        },
+
+        features: {
+            type: mongoose.Schema.Types.Mixed, // Tamamen esnek, dinamik objeler için
+            required: false,
+            default: {}
         }
     },
     {
@@ -108,20 +114,20 @@ export const RoommateListing = Listing.discriminator(
     new mongoose.Schema({
         smoking_allowed: {
             type: String,
-            enum: ['allowed', 'not_allowed', 'balcony_only'],
+            trim: true,
             required: [true, 'Smoking policy is required'],
-            default: 'not_allowed',
+            default: 'Not allowed',
         },
         pet_friendly: {
             type: String,
-            enum: ['yes', 'no', 'cats_only', 'small_pets_only'],
+            trim: true,
             required: [true, 'Pet policy is required'],
-            default: 'no',
+            default: 'No',
         },
         gender_preference: { // Students often look for same-gender housemates
             type: String,
-            enum: ['female', 'male', 'no_preference'],
-            default: 'no_preference',
+            trim: true,
+            default: 'No preference',
         }
     })
 )

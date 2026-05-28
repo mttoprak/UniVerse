@@ -9,6 +9,11 @@ const baseListingSchema = z.object({
     expires:     z.coerce.number().pipe(z.union([z.literal(1), z.literal(6), z.literal(12), z.literal(24)])).optional(),
     price:       z.coerce.number().min(0).default(0),
     is_urgent:   z.coerce.boolean().default(false),
+    features: z.record(
+        z.string().trim().min(1), // Key'ler boşluktan arındırılsın ve en az 1 karakter olsun
+        z.string().trim().min(1).max(500) // Value'lar boşluktan arındırılsın, en az 1, en fazla 500 karakter olsun
+    ).optional()
+
     // photos: controller'da multer ile gelir, buraya dahil değil
 })
 
@@ -100,6 +105,11 @@ export const updateListingSchema = z.object({
     expires:     z.coerce.number().pipe(z.union([z.literal(1), z.literal(6), z.literal(12), z.literal(24)])).optional(),
     status:      z.enum(['active', 'sold', 'closed', 'expired']).optional(),
     retainedPhotos: z.any().optional(), // Frontend'den array, JSON veya string olarak gelebilir
+    orderedPhotos: z.any().optional(), // Frontend'den sıralama listesi JSON string veya array olarak gelebilir
+    features: z.record(
+        z.string().trim().min(1),
+        z.string().trim().min(1).max(500)
+    ).optional(),
     // type değiştirilemiz — discriminator sabit kalır
 }) .superRefine((data, ctx) => {
         // Update esnasında sadece data verildiyse kontrol et
