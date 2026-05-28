@@ -21,6 +21,10 @@ const getPublicIdFromUrl = (url: string) => {
 
 export const createListing = async (req: Request, res: Response): Promise<any> => {
     try {
+        if (typeof req.body.features === 'string') {
+            try { req.body.features = JSON.parse(req.body.features) } catch (e) { /* ignore */ }
+        }
+
         const parsed = createListingSchema.safeParse(req.body)
         if (!parsed.success) {
             return res.status(400).json({
@@ -220,6 +224,14 @@ export const getMyListings = async (req: Request, res: Response): Promise<any> =
 
 export const updateListing = async (req: Request, res: Response): Promise<any> => {
     try {
+        const listing = await Listing.findById(req.params.id)
+        if (!listing)
+            return res.status(404).json({ error: 'Listing not found' })
+
+        if (typeof req.body.features === 'string') {
+            try { req.body.features = JSON.parse(req.body.features) } catch (e) { /* ignore */ }
+        }
+
         const parsed = updateListingSchema.safeParse(req.body)
         if (!parsed.success) {
             return res.status(400).json({
@@ -227,13 +239,6 @@ export const updateListing = async (req: Request, res: Response): Promise<any> =
             });
         }
 
-        const listing = await Listing.findOne({
-            _id: req.params.id,
-            owner: req.userId,
-        })
-
-        if (!listing)
-            return res.status(404).json({ error: 'Listing not found' })
 
         const files = req.files as Express.Multer.File[]
 
@@ -278,8 +283,27 @@ export const updateListing = async (req: Request, res: Response): Promise<any> =
         // --- 4. Son Fotoğraf Listesini Birleştir ---
         // Eğer kullanıcı fotoğraf değişikliği yapmışsa (eskilerden sildiği varsa ya da yeni eklediği varsa)
         if (req.body.retainedPhotos !== undefined || newlyUploadedUrls.length > 0) {
-            // Son liste = (silinmeyerek elde tutulan eski fotoğraflar) + (yeni yüklenen fotoğraflar)
-            listing.photos = [...retainedPhotos, ...newlyUploadedUrls];
+
+            // Eğer Frontend sıralamayı özel bir obje dizisi olarak yolladıysa (örn: orderedPhotos) o zaman sıralamayı frontend'den alırız.
+            if (req.body.orderedPhotos) {
+               try {
+                  const order = JSON.parse(req.body.orderedPhotos);
+                  // order = ["eski_url_2", "yeni_foto_index_0", "eski_url_5"] gibi
+
+                  let newUploadIndex = 0;
+                  listing.photos = order.map((item: string) => {
+                       if (item === "NEW_UPLOAD") {
+                          return newlyUploadedUrls[newUploadIndex++];
+                       }
+                       return item;
+                  });
+               } catch(e) {
+                   listing.photos = [...retainedPhotos, ...newlyUploadedUrls];
+               }
+            } else {
+               // Normal birleştirme
+               listing.photos = [...retainedPhotos, ...newlyUploadedUrls];
+            }
         }
 
         const updateData: any = { ...parsed.data };
