@@ -5,13 +5,13 @@ import { useRouter } from 'next/navigation';
 import {
     Briefcase, Car, Lock, ArrowRight, ArrowLeft,
     CheckCircle2, ImagePlus, TurkishLira, Calendar, MapPin,
-    FileText, Award, Presentation, ShoppingBag, Repeat, Home, Plus, X, Eye,
-    AlertTriangle, Video, Link as LinkIcon
+    FileText, Award, Presentation, ShoppingBag, Home, Plus, X, Eye,
+    AlertTriangle, Link as LinkIcon, ListPlus, Tag
 } from 'lucide-react';
 
 const categories = [
     { id: 'secondhand', title: 'İkinci El Satış', icon: ShoppingBag, requiresStudent: true, color: 'text-rose-400', border: 'border-rose-500/30', bg: 'hover:bg-rose-500/10', previewBg: 'bg-rose-500', previewText: 'text-rose-400', previewPillBg: 'bg-rose-500/10', previewBorder: 'border-rose-500/20' },
-    { id: 'roommate', title: 'Ev / Oda Arkadaşı', icon: Home, requiresStudent: true, color: 'text-teal-400', border: 'border-teal-500/30', bg: 'hover:bg-teal-500/10', previewBg: 'bg-teal-500', previewText: 'text-teal-400', previewPillBg: 'bg-teal-500/10', previewBorder: 'border-teal-500/20' },
+    { id: 'roommate', title: 'Ev/Oda Arkadaşı', icon: Home, requiresStudent: true, color: 'text-teal-400', border: 'border-teal-500/30', bg: 'hover:bg-teal-500/10', previewBg: 'bg-teal-500', previewText: 'text-teal-400', previewPillBg: 'bg-teal-500/10', previewBorder: 'border-teal-500/20' },
     { id: 'job', title: 'İş / Staj', icon: Briefcase, requiresStudent: false,  color: 'text-blue-400', border: 'border-blue-500/30', bg: 'hover:bg-blue-500/10', previewBg: 'bg-blue-500', previewText: 'text-blue-400', previewPillBg: 'bg-blue-500/10', previewBorder: 'border-blue-500/20' },
     { id: 'emergency', title: 'Acil İlan', icon: AlertTriangle, requiresStudent: false, color: 'text-red-500', border: 'border-red-500/50', bg: 'hover:bg-red-500/20 shadow-[0_0_15px_rgba(239,68,68,0.2)]', previewBg: 'bg-red-500', previewText: 'text-red-500', previewPillBg: 'bg-red-500/10', previewBorder: 'border-red-500/20' },
     { id: 'scholarship', title: 'Burs', icon: Award, requiresStudent: false, color: 'text-yellow-400', border: 'border-yellow-500/30', bg: 'hover:bg-yellow-500/10', previewBg: 'bg-yellow-500', previewText: 'text-yellow-400', previewPillBg: 'bg-yellow-500/10', previewBorder: 'border-yellow-500/20' },
@@ -23,6 +23,39 @@ const categories = [
 const TURKISH_CITIES = [
     {id:"01",name:"Adana"},{id:"02",name:"Adıyaman"},{id:"03",name:"Afyonkarahisar"},{id:"04",name:"Ağrı"},{id:"05",name:"Amasya"},{id:"06",name:"Ankara"},{id:"07",name:"Antalya"},{id:"08",name:"Artvin"},{id:"09",name:"Aydın"},{id:"10",name:"Balıkesir"},{id:"11",name:"Bilecik"},{id:"12",name:"Bingöl"},{id:"13",name:"Bitlis"},{id:"14",name:"Bolu"},{id:"15",name:"Burdur"},{id:"16",name:"Bursa"},{id:"17",name:"Çanakkale"},{id:"18",name:"Çankırı"},{id:"19",name:"Çorum"},{id:"20",name:"Denizli"},{id:"21",name:"Diyarbakır"},{id:"22",name:"Edirne"},{id:"23",name:"Elazığ"},{id:"24",name:"Erzincan"},{id:"25",name:"Erzurum"},{id:"26",name:"Eskişehir"},{id:"27",name:"Gaziantep"},{id:"28",name:"Giresun"},{id:"29",name:"Gümüşhane"},{id:"30",name:"Hakkari"},{id:"31",name:"Hatay"},{id:"32",name:"Isparta"},{id:"33",name:"Mersin"},{id:"34",name:"İstanbul"},{id:"35",name:"İzmir"},{id:"36",name:"Kars"},{id:"37",name:"Kastamonu"},{id:"38",name:"Kayseri"},{id:"39",name:"Kırklareli"},{id:"40",name:"Kırşehir"},{id:"41",name:"Kocaeli"},{id:"42",name:"Konya"},{id:"43",name:"Kütahya"},{id:"44",name:"Malatya"},{id:"45",name:"Manisa"},{id:"46",name:"Kahramanmaraş"},{id:"47",name:"Mardin"},{id:"48",name:"Muğla"},{id:"49",name:"Muş"},{id:"50",name:"Nevşehir"},{id:"51",name:"Niğde"},{id:"52",name:"Ordu"},{id:"53",name:"Rize"},{id:"54",name:"Sakarya"},{id:"55",name:"Samsun"},{id:"56",name:"Siirt"},{id:"57",name:"Sinop"},{id:"58",name:"Sivas"},{id:"59",name:"Tekirdağ"},{id:"60",name:"Tokat"},{id:"61",name:"Trabzon"},{id:"62",name:"Tunceli"},{id:"63",name:"Şanlıurfa"},{id:"64",name:"Uşak"},{id:"65",name:"Van"},{id:"66",name:"Yozgat"},{id:"67",name:"Zonguldak"},{id:"68",name:"Aksaray"},{id:"69",name:"Bayburt"},{id:"70",name:"Karaman"},{id:"71",name:"Kırıkkale"},{id:"72",name:"Batman"},{id:"73",name:"Şırnak"},{id:"74",name:"Bartın"},{id:"75",name:"Ardahan"},{id:"76",name:"Iğdır"},{id:"77",name:"Yalova"},{id:"78",name:"Karabük"},{id:"79",name:"Kilis"},{id:"80",name:"Osmaniye"},{id:"81",name:"Düzce"}
 ];
+
+// PRESET KRİTERLER (Criteria - Kişisel Beklentiler)
+const PRESET_CRITERIA = [
+    { key: 'Sigara Kullanımı', options: ['Kullanmıyorum, istemiyorum', 'Sadece balkonda/dışarıda', 'Farketmez', 'Kullanıyorum'] },
+    { key: 'Evcil Hayvan', options: ['Hayır, alerjim var', 'Sadece kedi/kuş vs.', 'Evet, var', 'Farketmez'] },
+    { key: 'Cinsiyet Tercihi', options: ['Sadece Kadın', 'Sadece Erkek', 'Farketmez'] },
+    { key: 'Misafir Durumu', options: ['Kesinlikle yasak', 'Önceden haber verilmeli', 'Gündüz serbest, yatılı yasak', 'Farketmez'] },
+    { key: 'Temizlik', options: ['Çok titizim, nöbetleşe temizlik', 'Ortak alanlar temiz kalmalı', 'Çok takılmam'] },
+    { key: 'Kendi Kriterini Ekle', options: [] }
+];
+
+// PRESET ÖZELLİKLER (Features - Fiziksel Durumlar)
+const PRESET_ROOMMATE_FEATURES = [
+    { key: 'Oda Sayısı', options: ['1+0', '1+1', '2+1', '3+1', '4+1 ve üzeri'] },
+    { key: 'Isıtma', options: ['Doğalgaz (Kombi)', 'Merkezi Sistem', 'Klima', 'Soba', 'Elektrikli'] },
+    { key: 'Eşya Durumu', options: ['Tam Eşyalı', 'Kısmi Eşyalı', 'Sadece Beyaz Eşya', 'Boş'] },
+    { key: 'Bulunduğu Kat', options: ['Bodrum / Yarı Bodrum', 'Zemin Kat', '1-3. Kat', '4-6. Kat', '7+ Kat'] },
+    { key: 'Bina Yaşı', options: ['0-5 Yıl', '6-10 Yıl', '11-20 Yıl', '21+ Yıl'] },
+    { key: 'Kendi Özelliğini Ekle', options: [] } // Örn: Metrekare
+];
+
+const PRESET_SECONDHAND_FEATURES = [
+    { key: 'Garanti Durumu', options: ['Devam Ediyor', 'Süresi Bitti', 'Yurtdışı/Garantisiz'] },
+    { key: 'Kutu ve Fatura', options: ['İkisi de var', 'Sadece Kutu', 'Sadece Fatura', 'İkisi de yok'] },
+    { key: 'Kendi Özelliğini Ekle', options: [] } // Örn: Marka, Model, Renk
+];
+
+interface DynamicField {
+    id: string;
+    key: string;
+    value: string;
+    isCustom: boolean;
+}
 
 export default function CreateListingWizard() {
     const router = useRouter();
@@ -37,32 +70,29 @@ export default function CreateListingWizard() {
     const [mediaFiles, setMediaFiles] = useState<File[]>([]);
     const [mediaPreviews, setMediaPreviews] = useState<{url: string, type: string}[]>([]);
 
-    // form states
     const [formData, setFormData] = useState({
         title: '', description: '', price: '',
-
-        // carpool
         origin: '', destination: '', departure_date: '', available_seats: '',
-
-        // job and scholarship
         application_url: '', deadline: '',
-
-        // roommate
-        smoking_allowed: 'not_allowed', pet_friendly: 'no', gender_preference: 'no_preference',
-
-        // course
-        subject: '', format: '', // online, in_person
-
-        // secondhand and notes
-        condition: '', // new, like_new, good, fair
-        secondhandCategory: '', // temp
-        subcategory: '' // class code
+        subject: '', format: '',
+        condition: '', secondhandCategory: '', subcategory: ''
     });
 
     const [districts, setDistricts] = useState<string[]>([]);
     const [selectedCityId, setSelectedCityId] = useState('');
     const [city, setCity] = useState('');
     const [district, setDistrict] = useState('');
+
+    // dynamic fields for roommate criteria and secondhand features
+    const [criteriaList, setCriteriaList] = useState<DynamicField[]>([]);
+    const [currentCriterionKey, setCurrentCriterionKey] = useState('');
+    const [currentCriterionValue, setCurrentCriterionValue] = useState('');
+    const [customCriterionKeyInput, setCustomCriterionKeyInput] = useState('');
+
+    const [featuresList, setFeaturesList] = useState<DynamicField[]>([]);
+    const [currentFeatureKey, setCurrentFeatureKey] = useState('');
+    const [currentFeatureValue, setCurrentFeatureValue] = useState('');
+    const [customFeatureKeyInput, setCustomFeatureKeyInput] = useState('');
 
     useEffect(() => {
         const checkAuth = async () => {
@@ -89,18 +119,63 @@ export default function CreateListingWizard() {
     useEffect(() => {
         const fetchDistricts = async () => {
             if (!selectedCityId) { setDistricts([]); return; }
+
             try {
-                const res = await fetch(`http://localhost:5000/api/misc/districts/${selectedCityId}`);
+                const rawToken = localStorage.getItem('accessToken');
+                const isValidToken = rawToken && rawToken !== 'null' && rawToken !== 'undefined';
+
+                const headers: Record<string, string> = {
+                    'Content-Type': 'application/json'
+                };
+
+                if (isValidToken) {
+                    headers['Authorization'] = `Bearer ${rawToken}`;
+                }
+
+                const res = await fetch(`http://localhost:5000/api/misc/districts/${selectedCityId}`, {
+                    method: 'GET',
+                    headers: headers
+                });
+
                 if (res.ok) {
                     const data = await res.json();
                     setDistricts(data);
+                } else {
+                    console.error(`İlçeler çekilemedi. Sunucu durumu: ${res.status}`);
                 }
-            } catch (error) { console.error("İlçeler çekilemedi", error); }
+            } catch (error) {
+                console.error("İlçeler çekilirken ağ hatası:", error);
+            }
         };
+
         fetchDistricts();
     }, [selectedCityId]);
 
-    // stem 2 checks according to Zod
+    // criteria handle
+    const handleAddCriterion = () => {
+        let finalKey = currentCriterionKey === 'Kendi Kriterini Ekle' ? customCriterionKeyInput.trim() : currentCriterionKey;
+        let finalValue = currentCriterionValue.trim();
+        if (!finalKey || !finalValue) return;
+        if (criteriaList.some(c => c.key === finalKey)) { alert('Bu kriteri zaten eklediniz.'); return; }
+
+        setCriteriaList(prev => [...prev, { id: Date.now().toString(), key: finalKey, value: finalValue, isCustom: currentCriterionKey === 'Kendi Kriterini Ekle' }]);
+        setCurrentCriterionKey(''); setCurrentCriterionValue(''); setCustomCriterionKeyInput('');
+    };
+    const handleRemoveCriterion = (idToRemove: string) => setCriteriaList(prev => prev.filter(c => c.id !== idToRemove));
+
+    // feature handle
+    const handleAddFeature = () => {
+        let finalKey = currentFeatureKey === 'Kendi Özelliğini Ekle' ? customFeatureKeyInput.trim() : currentFeatureKey;
+        let finalValue = currentFeatureValue.trim();
+        if (!finalKey || !finalValue) return;
+        if (featuresList.some(c => c.key === finalKey)) { alert('Bu özelliği zaten eklediniz.'); return; }
+
+        setFeaturesList(prev => [...prev, { id: Date.now().toString(), key: finalKey, value: finalValue, isCustom: currentFeatureKey === 'Kendi Özelliğini Ekle' }]);
+        setCurrentFeatureKey(''); setCurrentFeatureValue(''); setCustomFeatureKeyInput('');
+    };
+    const handleRemoveFeature = (idToRemove: string) => setFeaturesList(prev => prev.filter(c => c.id !== idToRemove));
+
+
     const isStep2Valid = () => {
         if (!formData.title.trim() || !formData.description.trim()) return false;
         switch (selectedCat) {
@@ -130,9 +205,7 @@ export default function CreateListingWizard() {
     const nextStep = () => setStep((prev) => Math.min(prev + 1, 4));
     const prevStep = () => setStep((prev) => Math.max(prev - 1, 1));
 
-    const handleFormChange = (key: string, value: string) => {
-        setFormData(prev => ({ ...prev, [key]: value }));
-    };
+    const handleFormChange = (key: string, value: string) => setFormData(prev => ({ ...prev, [key]: value }));
 
     const handleMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files) {
@@ -151,7 +224,6 @@ export default function CreateListingWizard() {
         setMediaPreviews(prev => prev.filter((_, i) => i !== index));
     };
 
-    // creating a payload according to Zod
     const submitListing = async () => {
         setIsSubmitting(true);
         setSubmitStatus('idle');
@@ -162,36 +234,38 @@ export default function CreateListingWizard() {
             if (!token) throw new Error('Oturum bulunamadı. Lütfen giriş yapın.');
 
             const submitData = new FormData();
-
             let schemaType = selectedCat;
             if (selectedCat === 'carpool') schemaType = 'carpooling';
             if (selectedCat === 'tutoring' || selectedCat === 'notes') schemaType = 'course';
-            if (selectedCat === 'notes') schemaType = 'secondhand'; // temp
+            if (selectedCat === 'notes') schemaType = 'secondhand';
 
             submitData.append('type', schemaType || 'secondhand');
             submitData.append('title', formData.title);
             submitData.append('description', formData.description);
             submitData.append('price', formData.price || '0');
 
-            // location process
             let finalLocation = 'Kampüs İçi';
-            if (city && district) {
-                finalLocation = `${district}, ${city}`;
-            } else if (schemaType === 'carpooling') {
-                finalLocation = `${formData.origin} -> ${formData.destination}`;
-            }
+            if (city && district) finalLocation = `${district}, ${city}`;
+            else if (schemaType === 'carpooling') finalLocation = `${formData.origin} -> ${formData.destination}`;
             submitData.append('location', finalLocation);
 
-            // type-specific Zod areas
+            if (featuresList.length > 0) {
+                featuresList.forEach(feature => {
+                    submitData.append(`features[${feature.key}]`, feature.value);
+                });
+            }
+
             if (schemaType === 'secondhand') {
-                submitData.append('condition', formData.condition); // new, like_new, good, fair
+                submitData.append('condition', formData.condition);
                 submitData.append('category', selectedCat === 'notes' ? 'textbooks_and_notes' : formData.secondhandCategory);
                 if (formData.subcategory) submitData.append('subcategory', formData.subcategory);
             }
             else if (schemaType === 'roommate') {
-                submitData.append('smoking_allowed', formData.smoking_allowed);
-                submitData.append('pet_friendly', formData.pet_friendly);
-                submitData.append('gender_preference', formData.gender_preference);
+                if (criteriaList.length > 0) {
+                    criteriaList.forEach(criterion => {
+                        submitData.append(`criteria[${criterion.key}]`, criterion.value);
+                    });
+                }
             }
             else if (schemaType === 'carpooling') {
                 submitData.append('origin', formData.origin);
@@ -208,7 +282,6 @@ export default function CreateListingWizard() {
                 if (formData.deadline) submitData.append('deadline', new Date(formData.deadline).toISOString());
             }
 
-            // files
             mediaFiles.forEach(file => { submitData.append('photos', file); });
 
             const response = await fetch('http://localhost:5000/api/listing', {
@@ -219,15 +292,9 @@ export default function CreateListingWizard() {
 
             const text = await response.text();
             let data;
-            try {
-                data = JSON.parse(text);
-            } catch (e) {
-                throw new Error(`Yanlış Endpoint veya Sunucu Hatası.`);
-            }
+            try { data = JSON.parse(text); } catch (e) { throw new Error(`Yanlış Endpoint veya Sunucu Hatası.`); }
 
-            if (!response.ok) {
-                throw new Error(data.message || data.error || 'İlan oluşturulurken hata oluştu.');
-            }
+            if (!response.ok) throw new Error(data.message || data.error || 'İlan oluşturulurken hata oluştu.');
 
             setSubmitStatus('success');
             setTimeout(() => { router.push('/feed'); }, 2000);
@@ -239,14 +306,6 @@ export default function CreateListingWizard() {
         } finally {
             setIsSubmitting(false);
         }
-    };
-
-    const handleCityChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const targetId = e.target.value;
-        setSelectedCityId(targetId);
-        const cityName = TURKISH_CITIES.find(c => c.id === targetId)?.name || '';
-        setCity(cityName);
-        setDistrict('');
     };
 
     const renderLocationSelector = (accentColor: string) => (
@@ -268,11 +327,23 @@ export default function CreateListingWizard() {
         </div>
     );
 
+    const handleCityChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const targetId = e.target.value;
+        setSelectedCityId(targetId);
+        const cityName = TURKISH_CITIES.find(c => c.id === targetId)?.name || '';
+        setCity(cityName); setDistrict('');
+    };
+
     const activeCatData = categories.find(c => c.id === selectedCat);
+
+    // find active presets
+    const selectedPresetCriterionObj = PRESET_CRITERIA.find(p => p.key === currentCriterionKey);
+    const selectedPresetFeatureObj = (selectedCat === 'roommate' ? PRESET_ROOMMATE_FEATURES : PRESET_SECONDHAND_FEATURES).find(p => p.key === currentFeatureKey);
 
     return (
         <div className="max-w-5xl mx-auto pb-20">
 
+            {/* header */}
             <div className="flex items-center justify-between mb-8">
                 <div>
                     <h1 className="text-3xl font-black text-white tracking-tight">Yeni İlan <span className="text-cyan-400">Oluştur</span></h1>
@@ -285,11 +356,11 @@ export default function CreateListingWizard() {
 
             {submitError && (
                 <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-center space-x-3 text-rose-400 text-sm animate-pulse">
-                    <AlertTriangle size={20} className="flex-shrink-0" />
-                    <span>{submitError}</span>
+                    <AlertTriangle size={20} className="flex-shrink-0" /><span>{submitError}</span>
                 </div>
             )}
 
+            {/* steps indicator */}
             <div className="flex items-center justify-between mb-12 relative">
                 <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-white/5 -z-10 rounded-full"></div>
                 <div className={`absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-cyan-500 shadow-[0_0_10px_#22d3ee] -z-10 rounded-full transition-all duration-500`} style={{ width: `${((step - 1) / 3) * 100}%` }}></div>
@@ -300,6 +371,7 @@ export default function CreateListingWizard() {
                 ))}
             </div>
 
+            {/* form area */}
             <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-[2rem] p-8 md:p-12 shadow-2xl min-h-[400px]">
 
                 {step === 1 && (
@@ -311,9 +383,7 @@ export default function CreateListingWizard() {
                                 const isSelected = selectedCat === cat.id;
                                 return (
                                     <button
-                                        key={cat.id}
-                                        disabled={isLocked}
-                                        onClick={() => setSelectedCat(cat.id)}
+                                        key={cat.id} disabled={isLocked} onClick={() => setSelectedCat(cat.id)}
                                         className={`relative flex flex-col items-start p-5 rounded-2xl border transition-all duration-300 text-left group ${isLocked ? 'bg-black/20 border-white/5 opacity-50 cursor-not-allowed' : 'cursor-pointer'} ${isSelected ? `bg-white/5 ${cat.border} shadow-[0_0_20px_rgba(255,255,255,0.05)] translate-y-[-4px]` : `bg-black/40 border-white/5 ${cat.bg}`}`}
                                     >
                                         <div className={`p-4 rounded-full bg-black/50 ${isLocked ? 'text-gray-600' : cat.color} mb-4`}>
@@ -321,9 +391,7 @@ export default function CreateListingWizard() {
                                         </div>
                                         <div>
                                             <h3 className={`text-base font-extrabold ${isLocked ? 'text-gray-500' : 'text-gray-200'}`}>{cat.title}</h3>
-                                            <p className="text-[11px] text-gray-500 mt-1">
-                                                {isLocked ? 'Sadece onaylı öğrenciler' : cat.id === 'emergency' ? 'Acil yardım çağrısı' : 'Seç'}
-                                            </p>
+                                            <p className="text-[11px] text-gray-500 mt-1">{isLocked ? 'Sadece onaylı öğrenciler' : cat.id === 'emergency' ? 'Acil yardım çağrısı' : 'Seç'}</p>
                                         </div>
                                         {isSelected && <div className="absolute top-4 right-4 text-cyan-400"><CheckCircle2 size={18} /></div>}
                                     </button>
@@ -342,7 +410,7 @@ export default function CreateListingWizard() {
                             <input type="text" value={formData.title} onChange={(e) => handleFormChange('title', e.target.value)} placeholder="İlanını özetleyen bir başlık" className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 focus:border-cyan-500/50 outline-none text-gray-200" />
                         </div>
 
-                        {/* JOB & SCHOLARSHIP (Link & Deadline) */}
+                        {/* JOB & SCHOLARSHIP */}
                         {(selectedCat === 'job' || selectedCat === 'scholarship') && (
                             <div className={`space-y-4 animate-in zoom-in-95 duration-300 border-l-2 pl-4 ${selectedCat === 'job' ? 'border-blue-500' : 'border-yellow-500'}`}>
                                 {selectedCat === 'job' && renderLocationSelector('text-blue-400')}
@@ -396,32 +464,136 @@ export default function CreateListingWizard() {
                                     {renderLocationSelector('text-teal-400')}
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-medium text-teal-400 ml-1">Sigara Kullanımı</label>
-                                        <select value={formData.smoking_allowed} onChange={(e) => handleFormChange('smoking_allowed', e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 outline-none text-gray-200 appearance-none">
-                                            <option value="not_allowed" className="bg-gray-900">Kesinlikle Yasak</option>
-                                            <option value="balcony_only" className="bg-gray-900">Sadece Balkonda</option>
-                                            <option value="allowed" className="bg-gray-900">Serbest</option>
-                                        </select>
+                                {/* features */}
+                                <div className="pt-4 border-t border-white/10 space-y-4">
+                                    <div>
+                                        <h4 className="text-sm font-bold text-teal-400 mb-1 flex items-center gap-2"><Tag size={16}/> Evin Fiziksel Özellikleri</h4>
+                                        <p className="text-xs text-gray-500 mb-4">Oda sayısı, bulunduğu kat, bina yaşı veya metrekare gibi özellikleri ekle.</p>
                                     </div>
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-medium text-teal-400 ml-1">Evcil Hayvan</label>
-                                        <select value={formData.pet_friendly} onChange={(e) => handleFormChange('pet_friendly', e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 outline-none text-gray-200 appearance-none">
-                                            <option value="no" className="bg-gray-900">İstemiyorum</option>
-                                            <option value="yes" className="bg-gray-900">Farketmez</option>
-                                            <option value="cats_only" className="bg-gray-900">Sadece Kedi</option>
-                                            <option value="small_pets_only" className="bg-gray-900">Sadece Küçük Evcil Hayvan</option>
-                                        </select>
+
+                                    <div className="flex flex-col sm:flex-row gap-3 items-end bg-white/5 p-4 rounded-xl border border-white/10">
+                                        <div className="w-full sm:w-1/3 space-y-1">
+                                            <label className="text-xs text-gray-400">Özellik Seç <span className="text-rose-500">*</span></label>
+                                            <select
+                                                value={currentFeatureKey} onChange={(e) => { setCurrentFeatureKey(e.target.value); setCurrentFeatureValue(''); }}
+                                                className="w-full bg-black/40 border border-white/10 rounded-lg py-2.5 px-3 text-sm focus:border-teal-500/50 outline-none text-gray-200 appearance-none"
+                                            >
+                                                <option value="" className="bg-gray-900">Özellik Seç...</option>
+                                                {PRESET_ROOMMATE_FEATURES.map(c => <option key={c.key} value={c.key} className="bg-gray-900">{c.key}</option>)}
+                                            </select>
+                                        </div>
+
+                                        <div className="w-full sm:flex-1 space-y-1">
+                                            {currentFeatureKey === 'Kendi Özelliğini Ekle' ? (
+                                                <div className="flex gap-2">
+                                                    <div className="w-1/2">
+                                                        <label className="text-xs text-gray-400">Özellik Adı <span className="text-rose-500">*</span></label>
+                                                        <input type="text" value={customFeatureKeyInput} onChange={(e) => setCustomFeatureKeyInput(e.target.value)} placeholder="Örn: Metrekare" className="w-full bg-black/40 border border-white/10 rounded-lg py-2.5 px-3 text-sm focus:border-teal-500/50 outline-none text-gray-200" />
+                                                    </div>
+                                                    <div className="w-1/2">
+                                                        <label className="text-xs text-gray-400">Değeri <span className="text-rose-500">*</span></label>
+                                                        <input type="text" value={currentFeatureValue} onChange={(e) => setCurrentFeatureValue(e.target.value)} placeholder="Örn: 120m2" className="w-full bg-black/40 border border-white/10 rounded-lg py-2.5 px-3 text-sm focus:border-teal-500/50 outline-none text-gray-200" />
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <label className="text-xs text-gray-400">Seçim / Durum <span className="text-rose-500">*</span></label>
+                                                    {selectedPresetFeatureObj?.options.length ? (
+                                                        <select value={currentFeatureValue} onChange={(e) => setCurrentFeatureValue(e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-lg py-2.5 px-3 text-sm focus:border-teal-500/50 outline-none text-gray-200 appearance-none">
+                                                            <option value="" className="bg-gray-900">Seçenek belirle...</option>
+                                                            {selectedPresetFeatureObj.options.map(opt => <option key={opt} value={opt} className="bg-gray-900">{opt}</option>)}
+                                                        </select>
+                                                    ) : (
+                                                        <input type="text" value={currentFeatureValue} onChange={(e) => setCurrentFeatureValue(e.target.value)} placeholder="Durumu belirt..." disabled={!currentFeatureKey} className="w-full bg-black/40 border border-white/10 rounded-lg py-2.5 px-3 text-sm focus:border-teal-500/50 outline-none text-gray-200 disabled:opacity-50" />
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
+
+                                        <button onClick={handleAddFeature} disabled={!currentFeatureKey || (currentFeatureKey === 'Kendi Özelliğini Ekle' && (!customFeatureKeyInput || !currentFeatureValue)) || (currentFeatureKey !== 'Kendi Özelliğini Ekle' && !currentFeatureValue)}
+                                                className="px-4 py-2.5 bg-teal-500 hover:bg-teal-400 disabled:bg-gray-700 disabled:text-gray-500 text-black font-bold rounded-lg text-sm transition-colors flex-shrink-0"
+                                        >Ekle</button>
                                     </div>
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-medium text-teal-400 ml-1">Cinsiyet Tercihi</label>
-                                        <select value={formData.gender_preference} onChange={(e) => handleFormChange('gender_preference', e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 outline-none text-gray-200 appearance-none">
-                                            <option value="no_preference" className="bg-gray-900">Farketmez</option>
-                                            <option value="female" className="bg-gray-900">Kadın</option>
-                                            <option value="male" className="bg-gray-900">Erkek</option>
-                                        </select>
+
+                                    {featuresList.length > 0 && (
+                                        <div className="flex flex-wrap gap-2 mt-4">
+                                            {featuresList.map(c => (
+                                                <div key={c.id} className="flex items-center gap-2 bg-teal-500/10 border border-teal-500/20 px-3 py-1.5 rounded-lg">
+                                                    <div>
+                                                        <span className="text-[10px] text-teal-400 uppercase font-bold block leading-none">{c.key}</span>
+                                                        <span className="text-sm text-gray-200 block leading-tight">{c.value}</span>
+                                                    </div>
+                                                    <button onClick={() => handleRemoveFeature(c.id)} className="ml-2 text-gray-500 hover:text-rose-400 p-0.5 rounded-md hover:bg-rose-400/10 transition-colors"><X size={14}/></button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* roommate criteria */}
+                                <div className="pt-4 border-t border-white/10 space-y-4">
+                                    <div>
+                                        <h4 className="text-sm font-bold text-teal-400 mb-1 flex items-center gap-2"><ListPlus size={16}/> Ev Arkadaşı Kriterleri</h4>
+                                        <p className="text-xs text-gray-500 mb-4">Aradığın ev arkadaşı için sigara, misafir veya evcil hayvan gibi beklentilerini ekle.</p>
                                     </div>
+
+                                    <div className="flex flex-col sm:flex-row gap-3 items-end bg-white/5 p-4 rounded-xl border border-white/10">
+                                        <div className="w-full sm:w-1/3 space-y-1">
+                                            <label className="text-xs text-gray-400">Kriter Seç <span className="text-rose-500">*</span></label>
+                                            <select
+                                                value={currentCriterionKey} onChange={(e) => { setCurrentCriterionKey(e.target.value); setCurrentCriterionValue(''); }}
+                                                className="w-full bg-black/40 border border-white/10 rounded-lg py-2.5 px-3 text-sm focus:border-teal-500/50 outline-none text-gray-200 appearance-none"
+                                            >
+                                                <option value="" className="bg-gray-900">Kriter Seç...</option>
+                                                {PRESET_CRITERIA.map(c => <option key={c.key} value={c.key} className="bg-gray-900">{c.key}</option>)}
+                                            </select>
+                                        </div>
+
+                                        <div className="w-full sm:flex-1 space-y-1">
+                                            {currentCriterionKey === 'Kendi Kriterini Ekle' ? (
+                                                <div className="flex gap-2">
+                                                    <div className="w-1/2">
+                                                        <label className="text-xs text-gray-400">Kriter Adı <span className="text-rose-500">*</span></label>
+                                                        <input type="text" value={customCriterionKeyInput} onChange={(e) => setCustomCriterionKeyInput(e.target.value)} placeholder="Örn: Ev Temizliği" className="w-full bg-black/40 border border-white/10 rounded-lg py-2.5 px-3 text-sm focus:border-teal-500/50 outline-none text-gray-200" />
+                                                    </div>
+                                                    <div className="w-1/2">
+                                                        <label className="text-xs text-gray-400">Beklenti / Durum <span className="text-rose-500">*</span></label>
+                                                        <input type="text" value={currentCriterionValue} onChange={(e) => setCurrentCriterionValue(e.target.value)} placeholder="Örn: Ortak yapılacak" className="w-full bg-black/40 border border-white/10 rounded-lg py-2.5 px-3 text-sm focus:border-teal-500/50 outline-none text-gray-200" />
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <label className="text-xs text-gray-400">Beklenti / Durum <span className="text-rose-500">*</span></label>
+                                                    {selectedPresetCriterionObj?.options.length ? (
+                                                        <select value={currentCriterionValue} onChange={(e) => setCurrentCriterionValue(e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-lg py-2.5 px-3 text-sm focus:border-teal-500/50 outline-none text-gray-200 appearance-none">
+                                                            <option value="" className="bg-gray-900">Seçenek belirle...</option>
+                                                            {selectedPresetCriterionObj.options.map(opt => <option key={opt} value={opt} className="bg-gray-900">{opt}</option>)}
+                                                        </select>
+                                                    ) : (
+                                                        <input type="text" value={currentCriterionValue} onChange={(e) => setCurrentCriterionValue(e.target.value)} placeholder="Durumu belirt..." disabled={!currentCriterionKey} className="w-full bg-black/40 border border-white/10 rounded-lg py-2.5 px-3 text-sm focus:border-teal-500/50 outline-none text-gray-200 disabled:opacity-50" />
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
+
+                                        <button onClick={handleAddCriterion} disabled={!currentCriterionKey || (currentCriterionKey === 'Kendi Kriterini Ekle' && (!customCriterionKeyInput || !currentCriterionValue)) || (currentCriterionKey !== 'Kendi Kriterini Ekle' && !currentCriterionValue)}
+                                                className="px-4 py-2.5 bg-teal-500 hover:bg-teal-400 disabled:bg-gray-700 disabled:text-gray-500 text-black font-bold rounded-lg text-sm transition-colors flex-shrink-0"
+                                        >Ekle</button>
+                                    </div>
+
+                                    {criteriaList.length > 0 && (
+                                        <div className="flex flex-wrap gap-2 mt-4">
+                                            {criteriaList.map(c => (
+                                                <div key={c.id} className="flex items-center gap-2 bg-teal-500/10 border border-teal-500/20 px-3 py-1.5 rounded-lg">
+                                                    <div>
+                                                        <span className="text-[10px] text-teal-400 uppercase font-bold block leading-none">{c.key}</span>
+                                                        <span className="text-sm text-gray-200 block leading-tight">{c.value}</span>
+                                                    </div>
+                                                    <button onClick={() => handleRemoveCriterion(c.id)} className="ml-2 text-gray-500 hover:text-rose-400 p-0.5 rounded-md hover:bg-rose-400/10 transition-colors"><X size={14}/></button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
@@ -473,7 +645,7 @@ export default function CreateListingWizard() {
                                 )}
 
                                 <div className="space-y-2">
-                                    <label className="text-sm font-medium text-violet-400 ml-1">Durumu <span className="text-rose-500">*</span></label>
+                                    <label className="text-sm font-medium text-violet-400 ml-1">Kullanım Durumu <span className="text-rose-500">*</span></label>
                                     <select value={formData.condition} onChange={(e) => handleFormChange('condition', e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 outline-none text-gray-200 appearance-none">
                                         <option value="" className="bg-gray-900">Seçiniz...</option>
                                         <option value="new" className="bg-gray-900">Sıfır</option>
@@ -482,6 +654,74 @@ export default function CreateListingWizard() {
                                         <option value="fair" className="bg-gray-900">Hasarlı / Eski</option>
                                     </select>
                                 </div>
+
+                                {/* secondhand features */}
+                                {selectedCat === 'secondhand' && (
+                                    <div className="pt-4 border-t border-white/10 space-y-4">
+                                        <div>
+                                            <h4 className="text-sm font-bold text-violet-400 mb-1 flex items-center gap-2"><Tag size={16}/> Ürün Özellikleri</h4>
+                                            <p className="text-xs text-gray-500 mb-4">Ürünün markası, modeli, garanti durumu gibi ek özellikleri ekle.</p>
+                                        </div>
+
+                                        <div className="flex flex-col sm:flex-row gap-3 items-end bg-white/5 p-4 rounded-xl border border-white/10">
+                                            <div className="w-full sm:w-1/3 space-y-1">
+                                                <label className="text-xs text-gray-400">Özellik Seç <span className="text-rose-500">*</span></label>
+                                                <select
+                                                    value={currentFeatureKey} onChange={(e) => { setCurrentFeatureKey(e.target.value); setCurrentFeatureValue(''); }}
+                                                    className="w-full bg-black/40 border border-white/10 rounded-lg py-2.5 px-3 text-sm focus:border-violet-500/50 outline-none text-gray-200 appearance-none"
+                                                >
+                                                    <option value="" className="bg-gray-900">Özellik Seç...</option>
+                                                    {PRESET_SECONDHAND_FEATURES.map(c => <option key={c.key} value={c.key} className="bg-gray-900">{c.key}</option>)}
+                                                </select>
+                                            </div>
+
+                                            <div className="w-full sm:flex-1 space-y-1">
+                                                {currentFeatureKey === 'Kendi Özelliğini Ekle' ? (
+                                                    <div className="flex gap-2">
+                                                        <div className="w-1/2">
+                                                            <label className="text-xs text-gray-400">Özellik Adı <span className="text-rose-500">*</span></label>
+                                                            <input type="text" value={customFeatureKeyInput} onChange={(e) => setCustomFeatureKeyInput(e.target.value)} placeholder="Örn: Marka" className="w-full bg-black/40 border border-white/10 rounded-lg py-2.5 px-3 text-sm focus:border-violet-500/50 outline-none text-gray-200" />
+                                                        </div>
+                                                        <div className="w-1/2">
+                                                            <label className="text-xs text-gray-400">Değeri <span className="text-rose-500">*</span></label>
+                                                            <input type="text" value={currentFeatureValue} onChange={(e) => setCurrentFeatureValue(e.target.value)} placeholder="Örn: Apple" className="w-full bg-black/40 border border-white/10 rounded-lg py-2.5 px-3 text-sm focus:border-violet-500/50 outline-none text-gray-200" />
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <label className="text-xs text-gray-400">Seçim / Durum <span className="text-rose-500">*</span></label>
+                                                        {selectedPresetFeatureObj?.options.length ? (
+                                                            <select value={currentFeatureValue} onChange={(e) => setCurrentFeatureValue(e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-lg py-2.5 px-3 text-sm focus:border-violet-500/50 outline-none text-gray-200 appearance-none">
+                                                                <option value="" className="bg-gray-900">Seçenek belirle...</option>
+                                                                {selectedPresetFeatureObj.options.map(opt => <option key={opt} value={opt} className="bg-gray-900">{opt}</option>)}
+                                                            </select>
+                                                        ) : (
+                                                            <input type="text" value={currentFeatureValue} onChange={(e) => setCurrentFeatureValue(e.target.value)} placeholder="Durumu belirt..." disabled={!currentFeatureKey} className="w-full bg-black/40 border border-white/10 rounded-lg py-2.5 px-3 text-sm focus:border-violet-500/50 outline-none text-gray-200 disabled:opacity-50" />
+                                                        )}
+                                                    </>
+                                                )}
+                                            </div>
+
+                                            <button onClick={handleAddFeature} disabled={!currentFeatureKey || (currentFeatureKey === 'Kendi Özelliğini Ekle' && (!customFeatureKeyInput || !currentFeatureValue)) || (currentFeatureKey !== 'Kendi Özelliğini Ekle' && !currentFeatureValue)}
+                                                    className="px-4 py-2.5 bg-violet-500 hover:bg-violet-400 disabled:bg-gray-700 disabled:text-gray-500 text-black font-bold rounded-lg text-sm transition-colors flex-shrink-0"
+                                            >Ekle</button>
+                                        </div>
+
+                                        {featuresList.length > 0 && (
+                                            <div className="flex flex-wrap gap-2 mt-4">
+                                                {featuresList.map(c => (
+                                                    <div key={c.id} className="flex items-center gap-2 bg-violet-500/10 border border-violet-500/20 px-3 py-1.5 rounded-lg">
+                                                        <div>
+                                                            <span className="text-[10px] text-violet-400 uppercase font-bold block leading-none">{c.key}</span>
+                                                            <span className="text-sm text-gray-200 block leading-tight">{c.value}</span>
+                                                        </div>
+                                                        <button onClick={() => handleRemoveFeature(c.id)} className="ml-2 text-gray-500 hover:text-rose-400 p-0.5 rounded-md hover:bg-rose-400/10 transition-colors"><X size={14}/></button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         )}
 
@@ -492,10 +732,10 @@ export default function CreateListingWizard() {
                     </div>
                 )}
 
+                {/* step 3 and 4 */}
                 {step === 3 && (
                     <div className="animate-in fade-in slide-in-from-right-8 duration-500 space-y-8">
                         <h2 className="text-xl font-bold text-white mb-2">Medya ve Fiyatlandırma</h2>
-
                         <label className="w-full border-2 border-dashed border-white/10 hover:border-cyan-500/50 bg-black/20 hover:bg-cyan-500/5 rounded-2xl p-8 flex flex-col items-center justify-center transition-all cursor-pointer group">
                             <input type="file" multiple accept="image/*, video/*" className="hidden" onChange={handleMediaUpload} />
                             <div className="p-4 rounded-full bg-white/5 group-hover:bg-cyan-500/20 text-gray-500 group-hover:text-cyan-400 transition-all mb-4"><ImagePlus size={32} /></div>
@@ -534,7 +774,6 @@ export default function CreateListingWizard() {
 
                         <div className="max-w-2xl mx-auto bg-[#0B0F19] border border-white/10 rounded-3xl overflow-hidden shadow-2xl relative group">
                             <div className={`absolute top-0 left-0 w-full h-1 ${activeCatData.previewBg}`}></div>
-
                             <div className="p-6">
                                 <div className="flex justify-between items-start mb-4">
                                     <div className={`px-3 py-1 rounded-full text-xs font-bold ${activeCatData.previewPillBg} ${activeCatData.previewText} border ${activeCatData.previewBorder} inline-flex items-center gap-2`}>
@@ -544,7 +783,6 @@ export default function CreateListingWizard() {
                                         <div className="text-2xl font-black text-white flex items-center gap-1"><TurkishLira size={20} />{formData.price === '0' || !formData.price ? 'Ücretsiz' : formData.price}</div>
                                     </div>
                                 </div>
-
                                 <h3 className="text-xl font-bold text-gray-100 mb-2">{formData.title}</h3>
                                 <p className="text-sm text-gray-400 mb-6 line-clamp-3 leading-relaxed">{formData.description}</p>
                             </div>
@@ -559,29 +797,18 @@ export default function CreateListingWizard() {
                 </button>
                 <button
                     onClick={() => {
-                        if (step === 1 && selectedCat === 'emergency') {
-                            router.push('/create-emergency');
-                        } else if (step === 4) {
-                            submitListing();
-                        } else {
-                            nextStep();
-                        }
+                        if (step === 1 && selectedCat === 'emergency') router.push('/create-emergency');
+                        else if (step === 4) submitListing();
+                        else nextStep();
                     }}
                     disabled={isNextDisabled() || isSubmitting}
                     className={`flex items-center space-x-2 px-8 py-3 rounded-full font-black text-[#0B0F19] transition-all duration-300 ${
-                        isNextDisabled() || isSubmitting
-                            ? 'bg-gray-700 cursor-not-allowed opacity-50'
-                            : submitStatus === 'success'
-                                ? 'bg-emerald-500'
-                                : 'bg-cyan-500 hover:bg-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.3)] hover:shadow-[0_0_30px_rgba(34,211,238,0.5)]'}`}>
-                    <span>
-                      {isSubmitting ? 'Yayınlanıyor...' :
-                          submitStatus === 'success' ? 'Başarıyla Yayınlandı!' : step === 3 ? 'Önizlemeyi Gör' : step === 4 ? 'YAYINLA' : 'Devam Et'}
-                    </span>
+                        isNextDisabled() || isSubmitting ? 'bg-gray-700 cursor-not-allowed opacity-50' : submitStatus === 'success' ? 'bg-emerald-500' : 'bg-cyan-500 hover:bg-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.3)] hover:shadow-[0_0_30px_rgba(34,211,238,0.5)]'}`}
+                >
+                    <span>{isSubmitting ? 'Yayınlanıyor...' : submitStatus === 'success' ? 'Başarıyla Yayınlandı!' : step === 3 ? 'Önizlemeyi Gör' : step === 4 ? 'YAYINLA' : 'Devam Et'}</span>
                     {step !== 4 && <ArrowRight size={20} />}
                 </button>
             </div>
-
         </div>
     );
 }
