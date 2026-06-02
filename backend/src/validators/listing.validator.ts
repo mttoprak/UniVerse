@@ -9,8 +9,12 @@ const baseListingSchema = z.object({
     expires:     z.coerce.number().pipe(z.union([z.literal(1), z.literal(6), z.literal(12), z.literal(24)])).optional(),
     price:       z.coerce.number().min(0).default(0),
     is_urgent:   z.coerce.boolean().default(false),
-    features: z.record(
-        z.string().trim().min(1), // Key'ler boşluktan arındırılsın ve en az 1 karakter olsun
+    features: z.record(// ürünün hizmetin özellikleri burda
+        z.string().trim().min(1).max(500), // Key'ler boşluktan arındırılsın ve en az 1 karakter olsun
+        z.string().trim().min(1).max(500) // Value'lar boşluktan arındırılsın, en az 1, en fazla 500 karakter olsun
+    ).optional(),
+    criteria: z.record( // listing sahibinin kriterleri olabilir
+        z.string().trim().min(1).max(500), // Key'ler boşluktan arındırılsın ve en az 1 karakter olsun
         z.string().trim().min(1).max(500) // Value'lar boşluktan arındırılsın, en az 1, en fazla 500 karakter olsun
     ).optional()
 
@@ -31,6 +35,7 @@ const secondhandSchema = baseListingSchema.extend({
 })
 
 const roommateSchema = baseListingSchema.extend({
+
     type:              z.literal('roommate'),
     smoking_allowed:   z.string().default('Not allowed'),
     pet_friendly:      z.string().default('No'),

@@ -1,7 +1,8 @@
 import { Request, Response } from 'express'
 import { Listing } from "../models/Listing"
 import User from "../models/User"
-import { uploadSingle, uploadMultiple, deleteFile } from '../utils/cloudinary/uploader.util';
+import Offer from "../models/Offer"
+import { uploadMultiple, deleteFile } from '../utils/cloudinary/uploader.util';
 import { createListingSchema, updateListingSchema } from '../validators/listing.validator'
 import {z} from "zod";
 
@@ -101,7 +102,16 @@ export const getListing = async (req: Request, res: Response): Promise<any> => {
             }
         }
 
-        return res.json({ listing, is_favorited })
+        // --- FETCH OFFER STATUS FOR THIS USER ---
+        let offerStatus = null;
+        if (req.userId && !isOwner) {
+            const existingOffer = await Offer.findOne({ listing: req.params.id, applicant: req.userId }).select('status');
+            if (existingOffer) {
+                offerStatus = existingOffer.status;
+            }
+        }
+
+        return res.json({ listing: { ...listing.toObject(), offerStatus }, is_favorited })
     } catch (error) {
         console.error('Get listing error:', error)
         return res.status(500).json({ error: 'Server error' })
@@ -120,6 +130,7 @@ export const getListings = async (req: Request, res: Response): Promise<any> => 
 
         const filter: Record<string, any> = {
             status: 'active',
+            is_deleted: { $ne: true },
             $or: [
                 { expires: { $gt: new Date() } },
                 { expires: { $exists: false } } // Eskiden kalma, expires değeri olmayan test ilanlarını da göstermek için
@@ -166,6 +177,7 @@ export const getFeedListings = async (req: Request, res: Response): Promise<any>
             .find({
                 status: 'active',
                 is_urgent: false,
+                is_deleted: { $ne: true },
                 $or: [
                     { expires: { $gt: new Date() } },
                     { expires: { $exists: false } }
@@ -191,6 +203,7 @@ export const getUserListings = async (req: Request, res: Response): Promise<any>
             .find({
                 owner: req.params.uID,
                 status: 'active',
+                is_deleted: { $ne: true },
                 $or: [
                     { expires: { $gt: new Date() } },
                     { expires: { $exists: false } }
@@ -210,7 +223,7 @@ export const getUserListings = async (req: Request, res: Response): Promise<any>
 export const getMyListings = async (req: Request, res: Response): Promise<any> => {
     try {
         const listings = await Listing
-            .find({ owner: req.userId })
+            .find({ owner: req.userId, is_deleted: { $ne: true } })
             .sort({ createdAt: -1 })
 
         return res.json({ listings })
@@ -306,7 +319,7 @@ export const updateListing = async (req: Request, res: Response): Promise<any> =
             }
         }
 
-        const updateData: any = { ...parsed.data };
+        const updateData: any = { ...parsed.data };//TODO: BURADA DÜZELTME LAZIM EXPIRES KISMI
         if (updateData.expires !== undefined) {
             const expiresDate = new Date();
             expiresDate.setHours(expiresDate.getHours() + updateData.expires);
@@ -335,22 +348,13 @@ export const deleteListing = async (req: Request, res: Response): Promise<any> =
         if (!listing)
             return res.status(404).json({ error: 'Listing not found' })
 
-        // Cloudinary fotoğraflarını sistemden temizle
-        if (listing.photos && listing.photos.length > 0) {
-            const deletePromises = listing.photos.map(async url => {
-                const publicId = getPublicIdFromUrl(url);
-                try {
-                    return await deleteFile(publicId, 'image');
-                } catch (err) {
-                    console.error('Silme sırasında resim silme hatası:', err);
-                }
-            });
-            await Promise.all(deletePromises);
-        }
+        // Artık Cloudinary fotoğraflarını sistemden silmiyoruz, Soft Delete yapıyoruz
+        // çünkü konuşmalarda veya geçmiş referanslarda kullanılabilir
+        listing.is_deleted = true;
+        listing.status = 'closed';
+        await listing.save();
 
-        await listing.deleteOne() // Kaydı veritabanından kaldır
-
-        return res.json({ message: 'Listing deleted' })
+        return res.json({ message: 'Listing deleted (soft)' })
     } catch (error) {
         console.error('Delete listing error:', error)
         return res.status(500).json({ error: 'Server error' })

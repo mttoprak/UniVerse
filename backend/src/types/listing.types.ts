@@ -15,6 +15,8 @@ export interface IBaseListing {
     is_urgent: boolean
     views: number
     save_count: number
+    features: Record<string, string>
+    criteria: Record<string, string>
     createdAt: Date
     updatedAt: Date
 }
@@ -39,9 +41,9 @@ export interface ISecondhandListing extends IBaseListing {
 
 export interface IRoommateListing extends IBaseListing {
     type: 'roommate'
-    smoking_allowed: 'allowed' | 'not_allowed' | 'balcony_only'
-    pet_friendly: 'yes' | 'no' | 'cats_only' | 'small_pets_only'
-    gender_preference: 'female' | 'male' | 'no_preference'
+    smoking_allowed: string
+    pet_friendly: string
+    gender_preference: string
 }
 
 export interface ICarpoolingListing extends IBaseListing {

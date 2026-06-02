@@ -2,35 +2,34 @@ import { Request, Response } from 'express'
 import { z } from 'zod'
 import mongoose from 'mongoose'
 import Comment from '../models/Comment'
-import { Listing } from '../models/Listing'
 import User from '../models/User'
+import Offer from '../models/Offer'
+import { Listing } from '../models/Listing'
 import { createCommentSchema, updateCommentSchema } from '../validators/comment.validator'
+
 
 // ─── AGREEMENT KONTROLÜ ───────────────────────────────────────────────────────
 //
 // Offer modeli kurulunca aşağıdaki TODO aktif edilir, başka hiçbir şey değişmez.
 // Şu an agreement kontrolü yok — comment sistemi açık çalışır.
 //
+
 const hasAgreement = async (
     _authorId:  string,
     _targetId:  string,
     _listingId: string,
 ): Promise<boolean> => {
-    // TODO: Offer modeli kurulunca aktif et
-    //
-    // import Offer from '../models/Offer'
-    //
-    // const agreement = await Offer.exists({
-    //     listing: _listingId,
-    //     status:  'accepted',
-    //     $or: [
-    //         { sender: _authorId,  receiver: _targetId },
-    //         { sender: _targetId,  receiver: _authorId },
-    //     ],
-    // })
-    // return !!agreement
-
-    return true
+    // Offer tablosunda applicant (teklif yapan) alanı var.
+    // Karşı taraf ise (kabul eden) ilanın sahibidir veya Marketplace ise konuşmadaki diğer kişidir.
+    // Şimdilik en optimum çözüm: _listingId'ye ait durumu "Accepted" olan ve
+    // teklifi yapanın _authorId veya _targetId olduğu bir teklif var mı diye bakmak.
+    // Sadece ilanla kısıtlı aradığınız için doğrudan o ilandaki Accepted teklifi arayabiliriz:
+    const agreement = await Offer.exists({
+        listing: _listingId,
+        status:  'Accepted',
+        applicant: { $in: [_authorId, _targetId] }
+    })
+    return !!agreement
 }
 
 // ─── CREATE ──────────────────────────────────────────────────────────────────
@@ -356,9 +355,15 @@ export const deleteComment = async (req: Request, res: Response): Promise<any> =
 
         // Puanlı top-level yorum silindiyse kullanıcı puanını geri al
         if (rating && !parent) {
-            await User.findByIdAndUpdate(target, {
-                $inc: { rating_sum: -rating, rating_count: -1 },
-            })
+            const userTarget = await User.findById(target);
+            if (userTarget) {
+                const newSum = Math.max(0, userTarget.rating_sum - rating);
+                const newCount = Math.max(0, userTarget.rating_count - 1);
+
+                userTarget.rating_sum = newSum;
+                userTarget.rating_count = newCount;
+                await userTarget.save();
+            }
         }
 
         return res.json({ message: 'Yorum silindi' })

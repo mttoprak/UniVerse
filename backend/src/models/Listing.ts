@@ -60,7 +60,19 @@ const listingSchema = new mongoose.Schema(
             type: mongoose.Schema.Types.Mixed, // Tamamen esnek, dinamik objeler için
             required: false,
             default: {}
+        },
+
+        criteria: {
+            type: mongoose.Schema.Types.Mixed, // Tamamen esnek, dinamik objeler için
+            required: false,
+            default: {}
+        },
+
+        is_deleted: {
+            type: Boolean,
+            default: false
         }
+
     },
     {
         timestamps: true,
@@ -206,4 +218,6 @@ export const ScholarshipListing = Listing.discriminator(
         },
     })
 )
+
+//TODO: ACİL İLANLAR EKLENECEK
 
