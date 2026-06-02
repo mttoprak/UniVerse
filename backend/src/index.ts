@@ -13,9 +13,11 @@
 import dotenv from "dotenv"
 dotenv.config()
 
+import http from "http"
 import express, { Request, Response } from "express"
 import mongoose from "mongoose"
 import cors from "cors"
+
 import authRouter from "./routes/auth.router"
 import testRouter from './routes/test.router';
 import userRouter from "./routes/user.router"
@@ -23,9 +25,11 @@ import miscRouter from "./routes/misc.router";
 import listingRouter from "./routes/listing.router";
 import commendRouter from "./routes/commend.router";
 import { startExpiredListingsCron } from "./cron/expiredListings.job";
+import {initSocket} from "./Socket/Socket";
 
 
 const app = express()
+const httpServer = http.createServer(app)   // HTTP Server for Socket.io
 const PORT = process.env.PORT || 5000
 
 // ─── MIDDLEWARE ──────────────────────────────
@@ -71,8 +75,11 @@ const start = async () => {
     try {
         await connect()
 
+        //Web Socket Server
+        initSocket(httpServer)
+
         // Zamanlanmış görevleri başlat
-        startExpiredListingsCron();
+        startExpiredListingsCron(); //TODO: EXPIRE OLMUŞ OFFER'LARI CANCELLAMAK GEREKİYOR
 
         app.listen(PORT, () => {
             console.log(`Server running on http://localhost:${PORT}`)
