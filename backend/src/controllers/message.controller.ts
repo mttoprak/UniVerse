@@ -233,7 +233,7 @@ export const getMessages = async (req: Request, res: Response): Promise<any> => 
 
         const limitNum = Math.min(50, Math.max(1, Number(limit) || 30))
 
-        // Conversation var mı ve kullanıcı bu sohbetin üyesi mi?
+        // 1. Conversation var mı ve kullanıcı bu sohbetin üyesi mi?
         const conversation = await Conversation.findById(conversationId)
         if (!conversation) return res.status(404).json({ error: 'Sohbet bulunamadı' })
 
@@ -244,7 +244,7 @@ export const getMessages = async (req: Request, res: Response): Promise<any> => 
 
         if (!isMember) return res.status(403).json({ error: 'Bu sohbete erişim yetkiniz yok' })
 
-        // Cursor: verilen tarihten daha eski mesajları getir (yukarı kaydırma)
+        // 2. Cursor: verilen tarihten daha eski mesajları getir (yukarı kaydırma)
         const filter: Record<string, any> = { conversation: conversationId }
         if (cursor) {
             filter.createdAt = { $lt: new Date(cursor as string) }
@@ -259,9 +259,10 @@ export const getMessages = async (req: Request, res: Response): Promise<any> => 
         // Eski → yeni sıraya çevir (UI için)
         messages.reverse()
 
-        // ── Okunmamış mesajları okundu yap ──────────────────────────────────
-        // Benim dışımdaki gönderilen, okunmamış mesajları işaretle
+        // ── 3. OKUNMAMIŞ MESAJLARI OKUNDU YAP ──────────────────────────────────
         const now = new Date()
+
+        // Karşı taraftan gelen ve henüz okunmamış olan tüm mesajları toplu güncelle
         await Message.updateMany(
             {
                 conversation: conversationId,
@@ -271,10 +272,28 @@ export const getMessages = async (req: Request, res: Response): Promise<any> => 
             { $set: { isRead: true, readAt: now } }
         )
 
-        // unreadCount sıfırla
+        // ── 4. CONVERSATION OBJESİNİ GÜNCELLE (Hatalar Düzenlendi) ────────────────
+        let conversationChanged = false
         const role = conversation.seller.toString() === req.userId ? 'seller' : 'buyer'
+
+        // Okunmamış sayaç varsa sıfırla
         if (conversation.unreadCount[role] > 0) {
             conversation.unreadCount[role] = 0
+            conversationChanged = true
+        }
+
+        // KRİTİK KONTROL: Eğer son mesaj varsa VE son mesajı atan kişi BEN DEĞİLSEM VE hala okunmadıysa true yap
+        if (
+            conversation.lastMessage &&
+            conversation.lastMessage.senderId.toString() !== req.userId &&
+            !conversation.lastMessage.isRead
+        ) {
+            conversation.lastMessage.isRead = true
+            conversationChanged = true
+        }
+
+        // Eğer yukarıdaki if'lerden herhangi birine girdiyse tek seferde DB'ye kaydet ⚡
+        if (conversationChanged) {
             await conversation.save()
         }
 
@@ -294,7 +313,6 @@ export const getMessages = async (req: Request, res: Response): Promise<any> => 
         return res.status(500).json({ error: 'Server error' })
     }
 }
-
 // ─── GET CONVERSATIONS ────────────────────────────────────────────────────────
 // GET /api/message/conversations?page=1&limit=20
 //
