@@ -302,29 +302,60 @@ export const getMessages = async (req: Request, res: Response): Promise<any> => 
 
 export const getConversations = async (req: Request, res: Response): Promise<any> => {
     try {
-        const { page = '1', limit = '20' } = req.query
-        const pageNum  = Math.max(1, Number(page)  || 1)
-        const limitNum = Math.min(50, Math.max(1, Number(limit) || 20))
+        const { page = '1', limit = '20', status } = req.query;
 
-        const conversations = await Conversation.find({
-            $or: [{ seller: req.userId }, { buyer: req.userId }],
+        const pageNum  = Math.max(1, Number(page)  || 1);
+        const limitNum = Math.min(50, Math.max(1, Number(limit) || 20));
+        const userId   = req.userId;
+
+        if (!userId) {
+            return res.status(401).json({ error: 'Yetkilendirme hatası' });
+        }
+
+        // 1. Temel Sorgu Filtresi (Kullanıcının dahil olduğu ve engellenmeyen sohbetler)
+        const query: any = {
+            $or: [{ seller: userId }, { buyer: userId }],
             status: { $ne: 'blocked' },
-        })
-            .sort({ updatedAt: -1 })
-            .skip((pageNum - 1) * limitNum)
-            .limit(limitNum)
-            .populate('listing', 'title photos type')
-            .populate('seller',  'name surname profile_photo')
-            .populate('buyer',   'name surname profile_photo')
-            .populate('activeOffer')
+        };
 
-        return res.json({ conversations, page: pageNum })
+        // Eğer frontend'den filtre geldiyse (Örn: sadece active veya sadece archived listelemek için)
+        if (status && ['active', 'archived'].includes(status as string)) {
+            query.status = status;
+        }
+
+        // 2. Performans İçin Veritabanı Sorgularını Paralel Çalıştırıyoruz ⚡
+        const [conversations, totalCount] = await Promise.all([
+            Conversation.find(query)
+                .sort({ updatedAt: -1 })
+                .skip((pageNum - 1) * limitNum)
+                .limit(limitNum)
+                .populate('listing', 'title photos type')
+                .populate('seller',  'name surname profile_photo')
+                .populate('buyer',   'name surname profile_photo')
+                // .populate('activeOffer') // ⚠️ AŞAĞIDAKİ UYARIYI OKU!
+                .lean(), // ⚡ Performansı uçurur: Mongoose dökümanı yerine hafif, düz JS nesnesi döner.
+            Conversation.countDocuments(query)
+        ]);
+
+        const totalPages = Math.ceil(totalCount / limitNum);
+
+        // 3. Frontend dostu response yapısı
+        return res.json({
+            conversations,
+            pagination: {
+                page: pageNum,
+                limit: limitNum,
+                totalCount,
+                totalPages,
+                hasNextPage: pageNum < totalPages
+            }
+        });
 
     } catch (error) {
-        console.error('getConversations error:', error)
-        return res.status(500).json({ error: 'Server error' })
+        console.error('getConversations error:', error);
+        return res.status(500).json({ error: 'Server error' });
     }
-}
+};
 
 // ─── DELETE MESSAGE ───────────────────────────────────────────────────────────
 // DELETE /api/message/:messageId
