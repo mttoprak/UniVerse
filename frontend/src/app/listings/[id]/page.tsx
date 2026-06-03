@@ -118,6 +118,16 @@ export default function AdDetailPage() {
         fetchAdDetailsFavoritesAndComments();
     }, [id, router]);
 
+    const handleStartChat = () => {
+        const token = localStorage.getItem('accessToken');
+        if (!token) {
+            router.push('/login');
+            return;
+        }
+""
+        router.push(`/messages?listingId=${id}`);
+    };
+
     const handleToggleFavorite = async () => {
         const token = localStorage.getItem('accessToken');
         if (!token) return;
@@ -507,9 +517,10 @@ export default function AdDetailPage() {
                                 </div>
                             )}
 
-                            <button onClick={handleContactSeller} className="w-full flex items-center justify-center space-x-2 bg-cyan-600 hover:bg-cyan-500 text-[#0B0F19] py-4 rounded-xl font-black uppercase tracking-widest transition-all shadow-[0_10px_20px_rgba(34,211,238,0.2)]">
-                                <MessageSquare size={18} />
-                                <span>Satıcıya Mesaj At</span>
+                            <button
+                                onClick={handleStartChat}
+                                className="w-full bg-cyan-500 text-black py-4 rounded-2xl font-bold hover:bg-cyan-400 transition-all shadow-[0_0_15px_rgba(34,211,238,0.2)]">
+                                Mesaj Gönder
                             </button>
                         </div>
                     </div>
