@@ -5,6 +5,7 @@ import Offer from "../models/Offer"
 import { uploadMultiple, deleteFile } from '../utils/cloudinary/uploader.util';
 import { createListingSchema, updateListingSchema } from '../validators/listing.validator'
 import {z} from "zod";
+import {IUser} from "../types/user.types";
 
 /**
  * Helper Func: Cloudinary URL'den publicId'yi çıkarır
@@ -66,16 +67,37 @@ export const createListing = async (req: Request, res: Response): Promise<any> =
 
 export const getListing = async (req: Request, res: Response): Promise<any> => {
     try {
-        let listing = await Listing.findById(req.params.id).populate('owner', 'username avatar account_type');
+        let listing = await Listing.findById(req.params.id).populate('owner', 'username avatar account_type is_verified');
 
         if (!listing)
             return res.status(404).json({ error: 'Listing not found' })
 
-        // 1. Yetki Kontrolü: Kullanıcıyı bulup rolüne bakıyoruz
+        // varsayılan IUser arayüzünün bunlara sahip olduğunu varsayıyoruz:
+        // interface IUser { account_type: string; favorite_listings: Types.ObjectId[] | string[]; }
+
         let isStudent = false;
+        let isVerifiedStudent = false;
+        let is_favorited = false;
+
+        // LeanDocument yerine doğrudan IUser tipini veya Mongoose'un otomatik çıkarımını kullanabilirsin
+        let currentUser: IUser | null = null;
+
         if (req.userId) {
-            const user = await User.findById(req.userId);
-            isStudent = (user?.account_type === 'student');
+            currentUser = await User.findById(req.userId).lean<IUser>();
+
+            if (currentUser) {
+                isStudent = currentUser.account_type === 'student';
+
+
+                // is the listing favorited control
+                if (currentUser.favorite_listings) {
+                    is_favorited = currentUser.favorite_listings.some(
+                        (id) => id.toString() === req.params.id
+                    );
+                }
+            }else {
+                return res.status(404).json({ error: 'User not found' });
+            }
         }
 
         // owner populate edildiği için _id sini string olarak alıyoruz
@@ -91,16 +113,6 @@ export const getListing = async (req: Request, res: Response): Promise<any> => {
         // 2. Yetki verildikten sonra views (görüntülenme) sayısını artır
         await Listing.findByIdAndUpdate(req.params.id, { $inc: { views: 1 } });
         listing.views += 1;
-
-        let is_favorited = false;
-        if (req.userId) {
-            const user = await User.findById(req.userId).select('favorite_listings');
-            if (user && user.favorite_listings) {
-                is_favorited = user.favorite_listings.some(
-                    (id: any) => id.toString() === req.params.id
-                );
-            }
-        }
 
         // --- FETCH OFFER STATUS FOR THIS USER ---
         let offerStatus = null;
