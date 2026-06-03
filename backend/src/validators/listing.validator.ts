@@ -37,9 +37,9 @@ const secondhandSchema = baseListingSchema.extend({
 const roommateSchema = baseListingSchema.extend({
 
     type:              z.literal('roommate'),
-    smoking_allowed:   z.string().default('Not allowed'),
-    pet_friendly:      z.string().default('No'),
-    gender_preference: z.string().default('No preference'),
+    smoking_allowed:   z.string().optional(),
+    pet_friendly:      z.string().optional(),
+    gender_preference: z.string().optional(),
 })
 
 const carpoolingSchema = baseListingSchema.extend({

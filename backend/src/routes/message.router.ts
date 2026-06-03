@@ -3,11 +3,11 @@ import multer     from 'multer'
 import { authMiddleware } from '../middleware/middleware'
 import * as MC from '../controllers/message.controller'
 
-const messageRouter = Router()
+const router = Router()
 const upload = multer({ storage: multer.memoryStorage() })
 
 // POST   /api/message                          → Mesaj gönder (conversation yoksa oluşturur)
-messageRouter.post(
+router.post(
     '/',
     authMiddleware,
     upload.array('photos', 5),
@@ -15,12 +15,12 @@ messageRouter.post(
 )
 
 // GET    /api/message/conversations            → Tüm sohbetlerim
-messageRouter.get('/conversations',    authMiddleware, MC.getConversations)
+router.get('/conversations',    authMiddleware, MC.getConversations)
 
 // GET    /api/message/:conversationId          → Sohbet mesajları (cursor-based)
-messageRouter.get('/:conversationId',  authMiddleware, MC.getMessages)
+router.get('/:conversationId',  authMiddleware, MC.getMessages)
 
 // DELETE /api/message/:messageId               → Mesajı sil (soft)
-messageRouter.delete('/:messageId',    authMiddleware, MC.deleteMessage)
+router.delete('/:messageId',    authMiddleware, MC.deleteMessage)
 
-export { messageRouter }
+export default router

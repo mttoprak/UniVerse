@@ -220,4 +220,4 @@ export const ScholarshipListing = Listing.discriminator(
 )
 
 //TODO: ACİL İLANLAR EKLENECEK
-
+//TODO: Ders Notu Eklenecek

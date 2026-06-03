@@ -24,8 +24,11 @@ import userRouter from "./routes/user.router"
 import miscRouter from "./routes/misc.router";
 import listingRouter from "./routes/listing.router";
 import commendRouter from "./routes/commend.router";
+import messageRouter from "./routes/message.router";
+import offerRouter from "./routes/offer.router";
 import { startExpiredListingsCron } from "./cron/expiredListings.job";
 import {initSocket} from "./Socket/Socket";
+
 
 
 const app = express()
@@ -48,6 +51,8 @@ app.use('/api/test', testRouter);
 app.use('/api/listing', listingRouter);
 app.use('/api/comment', commendRouter);
 app.use("/api/user", userRouter)
+app.use("/api/messaging", messageRouter)
+app.use("/api/offer", offerRouter)
 
 
 // app.use("/api/auth", authRoutes)

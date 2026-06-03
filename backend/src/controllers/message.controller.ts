@@ -34,17 +34,17 @@ export const sendMessage = async (req: Request, res: Response): Promise<any> => 
             return res.status(400).json({ errors: z.treeifyError(parsed.error) });
         }
 
-        const { listingId, text, location, offerPrice, offerPricePer, offerNote } = parsed.data;
-        const buyerId = req.userId;
+        const { conversationId, listingId, text, location, offerPrice, offerPricePer, offerNote } = parsed.data;
+        const buyerId = req.userId; // Bu endpoint'i tetikleyen kişi her zaman Alıcı (Buyer) kabul ediliyor
 
         if (!buyerId) {
             return res.status(401).json({ error: 'Yetkilendirme hatası, lütfen giriş yapın.' });
         }
 
-        // 2. İlan ve Kullanıcı Kontrollerini Paralel Yapalım (Performans Kazancı 🚀)
+        // 2. İlan ve Kullanıcı Kontrollerini Paralel Yapalım
         const [listing, buyerUser] = await Promise.all([
             Listing.findById(listingId).select('owner title type is_deleted status'),
-            User.findById(buyerId).lean<IUser>()
+            User.findById(buyerId).lean()
         ]);
 
         if (!listing || listing.is_deleted) {
@@ -61,17 +61,37 @@ export const sendMessage = async (req: Request, res: Response): Promise<any> => 
             return res.status(403).json({ error: 'Kendi ilanınıza mesaj gönderemezsiniz' });
         }
 
-        // 3. Conversation bul veya oluştur
-        let conversation = await Conversation.findOne({
-            listing: listingId,
-            seller:  sellerId,
-            buyer:   buyerId,
-        });
+        // 3. Conversation Bul veya Oluştur (Çoklu Konuşma Destekli)
+        let conversation;
+
+        if (conversationId) {
+            // Frontend spesifik bir konuşma odası belirttiyse direkt onu bul
+            conversation = await Conversation.findById(conversationId);
+
+            if (!conversation) {
+                return res.status(404).json({ error: 'Belirtilen konuşma bulunamadı.' });
+            }
+
+            // Güvenlik: İstek atan alıcı gerçekten bu konuşmanın alıcısı mı?
+            if (conversation.buyer.toString() !== buyerId) {
+                return res.status(403).json({ error: 'Bu konuşmaya mesaj gönderme yetkiniz yok.' });
+            }
+        } else {
+            // İlk defa mesaj atılıyorsa veya ilan sayfasından geliniyorsa;
+            // Sadece HALA AKTİF (active) olan bir konuşma varsa onu yakala
+            conversation = await Conversation.findOne({
+                listing: listingId,
+                seller:  sellerId,
+                buyer:   buyerId,
+                status:  'active', // Arşivlenmiş olanları pas geçer, böylece yeni oda açılabilir
+            });
+        }
 
         const isNewConversation = !conversation;
 
         if (!conversation) {
-            const isSenderVerified = buyerUser ? buyerUser.is_verified : false;
+            // Sadece onaylı öğrenciler yeni sıfırdan konuşma başlatabilir
+            const isSenderVerified = buyerUser ? (buyerUser as any).is_verified : false;
             if (!isSenderVerified) {
                 return res.status(403).json({ error: 'Sadece onaylı öğrenciler yeni ilan için mesaj atabilirler.' });
             }
@@ -95,15 +115,14 @@ export const sendMessage = async (req: Request, res: Response): Promise<any> => 
             if (files.length > 5) {
                 return res.status(400).json({ error: 'Bir mesajda en fazla 5 fotoğraf gönderilebilir' });
             }
-            const uploaded = await uploadMultiple(files, 'listingPhoto', 5);
+            const uploaded = await uploadMultiple(files, 'listingPhoto', 5); // uploadMultiple fonksiyonunun tanımlı olduğundan emin ol
             photoUrls = uploaded.map(f => f.url);
         }
 
         let finalOfferId: mongoose.Types.ObjectId | null = null;
 
-        // 5. ENTEGRE OFFER SİSTEMİ (Performans Optimize Edildi)
+        // 5. Entegre Teklif Sistemi (Bulk Update ile Optimize Edildi)
         if (offerPrice !== undefined) {
-            // Döngü yerine tek sorguyla toplu güncelleme (Bulk Update) ⚡
             await Promise.all([
                 Offer.updateMany(
                     { conversation: conversation._id, applicant: buyerId, status: 'Pending' },
@@ -115,7 +134,7 @@ export const sendMessage = async (req: Request, res: Response): Promise<any> => 
                 )
             ]);
 
-            const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // +48 saat
+            const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // +48 saat geçerlilik
             const newOffer = await Offer.create({
                 listing:      listingId,
                 applicant:    buyerId,
@@ -131,7 +150,7 @@ export const sendMessage = async (req: Request, res: Response): Promise<any> => 
             conversation.offerStatus = "Offer Sent";
         }
 
-        // 6. Mesaj oluştur
+        // 6. Mesaj Oluştur
         const message = await Message.create({
             conversation: conversation._id,
             sender:       buyerId,
@@ -142,16 +161,16 @@ export const sendMessage = async (req: Request, res: Response): Promise<any> => 
             offer:        finalOfferId,
         });
 
-        // Preview oluşturma mantığı (Burası gayet temiz)
+        // Preview (Önizleme metni) oluşturma mantığı
         let preview = 'Yeni bir mesaj';
         if (text)                  preview = text.slice(0, 80);
         else if (photoUrls.length) preview = `${photoUrls.length} fotoğraf`;
         else if (location)         preview = 'Konum paylaşıldı';
         else if (finalOfferId)     preview = 'Teklif gönderildi';
 
-        const senderName = buyerUser ? `${buyerUser.name} ${buyerUser.surname}` : 'Kullanıcı';
+        const senderName = buyerUser ? `${(buyerUser as any).name} ${(buyerUser as any).surname}` : 'Kullanıcı';
 
-        // 7. Conversation güncelleme ve kaydetme
+        // 7. Conversation Güncelleme ve Kaydetme
         conversation.lastMessage = {
             senderId:   new mongoose.Types.ObjectId(buyerId),
             senderName,
@@ -160,23 +179,22 @@ export const sendMessage = async (req: Request, res: Response): Promise<any> => 
             sentAt:     new Date(),
             isRead:     false
         };
-        conversation.unreadCount.seller += 1;
+        conversation.unreadCount.seller += 1; // Alıcı gönderdiği için satıcının okunmamış sayısını artırıyoruz
 
         await conversation.save();
 
-        // 8. Koşullu Populate (Gereksiz try-catch'ten kurtulduk)
+        // 8. Koşullu Populate
         let populated = await message.populate('sender', 'name surname profile_photo');
         if (finalOfferId) {
             populated = await populated.populate('offer');
         }
 
-        // 9. Socket Yayınları
+        // 9. Socket Yayınları (Fonksiyonlarının dışarıda tanımlı olduğunu varsayıyoruz)
         emitNewMessage(conversation._id.toString(), populated);
         emitConversationUpdated(sellerId, buyerId, conversation);
 
         // 10. Arka Plan Bildirim İşlemleri (Non-blocking)
         if (isNewConversation) {
-            // async akışı bozmamak için populate işlemini arka plana alabiliriz veya bekleyebiliriz
             conversation.populate([
                 { path: 'listing', select: 'title' },
                 { path: 'buyer',   select: 'name surname profile_photo' },
@@ -184,7 +202,6 @@ export const sendMessage = async (req: Request, res: Response): Promise<any> => 
                 emitNewConversation(sellerId, convPopulated);
             });
 
-            // E-posta bildirim mantığı (TODO aşaması için hazır)
             User.findById(sellerId).select('email name').then(seller => {
                 if (seller?.email) {
                     // sendNewConversationEmail(seller.email, seller.name, listing.title)
@@ -193,7 +210,7 @@ export const sendMessage = async (req: Request, res: Response): Promise<any> => 
         }
 
         return res.status(201).json({
-            message:     populated,
+            message:        populated,
             conversationId: conversation._id,
             isNewConversation,
         });
@@ -203,7 +220,6 @@ export const sendMessage = async (req: Request, res: Response): Promise<any> => 
         return res.status(500).json({ error: 'Server error' });
     }
 };
-
 // ─── GET MESSAGES ─────────────────────────────────────────────────────────────
 // GET /api/message/:conversationId?cursor=<createdAt>&limit=30
 //

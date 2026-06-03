@@ -64,8 +64,15 @@ const conversationSchema = new Schema<IConversation>(
 conversationSchema.index({ seller: 1, updatedAt: -1 })
 conversationSchema.index({ buyer:  1, updatedAt: -1 })
 
-// Aynı ilan için aynı iki kişi arasında sadece 1 conversation olsun
-conversationSchema.index({ listing: 1, seller: 1, buyer: 1 }, { unique: true })
+// GÜNCELLENEN ALAN: Aynı ilan için aynı iki kişi arasında sadece 1 tane AKTİF conversation olabilir.
+// Arşivlenmiş veya engellenmiş eski konuşmalar bu unique kuralına takılmaz.
+conversationSchema.index(
+    { listing: 1, seller: 1, buyer: 1 },
+    {
+        unique: true,
+        partialFilterExpression: { status: 'active' }
+    }
+)
 
 // Bir ilana ait tüm sohbetler (satıcı paneli)
 conversationSchema.index({ listing: 1, updatedAt: -1 })
