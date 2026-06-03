@@ -1,8 +1,8 @@
 import { z } from "zod"
 
 export const sendMessageSchema = z.object({
-    conversationId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Geçersiz conversation ID').optional(), // <-- İsteğe bağlı eklendi
-    listingId:      z.string().regex(/^[0-9a-fA-F]{24}$/, 'Geçersiz listing ID'),
+    conversationId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Geçersiz conversation ID').optional(),
+    listingId:      z.string().regex(/^[0-9a-fA-F]{24}$/, 'Geçersiz listing ID').optional(),
     text:           z.string().trim().max(2000).optional(),
     location:       z.string().url('Geçerli bir Google Maps URL giriniz').optional(),
     offerPrice:     z.coerce.number().min(0, 'Fiyat 0 dan küçük olamaz').optional(),
