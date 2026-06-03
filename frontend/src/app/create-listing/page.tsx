@@ -118,23 +118,23 @@ export default function CreateListingWizard() {
 
     useEffect(() => {
         const fetchDistricts = async () => {
-            if (!selectedCityId) { setDistricts([]); return; }
+            if (!selectedCityId) {
+                setDistricts([]);
+                return;
+            }
 
             try {
-                const rawToken = localStorage.getItem('accessToken');
-                const isValidToken = rawToken && rawToken !== 'null' && rawToken !== 'undefined';
+                const token = localStorage.getItem('accessToken');
+                const isValidToken = token && token !== 'null' && token !== 'undefined';
 
-                const headers: Record<string, string> = {
-                    'Content-Type': 'application/json'
-                };
+                const formattedCityId = parseInt(selectedCityId, 10).toString();
 
-                if (isValidToken) {
-                    headers['Authorization'] = `Bearer ${rawToken}`;
-                }
-
-                const res = await fetch(`http://localhost:5000/api/misc/districts/${selectedCityId}`, {
+                const res = await fetch(`http://localhost:5000/api/misc/districts/${formattedCityId}`, {
                     method: 'GET',
-                    headers: headers
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(isValidToken && { 'Authorization': `Bearer ${token}` })
+                    }
                 });
 
                 if (res.ok) {
