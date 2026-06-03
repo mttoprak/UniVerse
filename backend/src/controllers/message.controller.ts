@@ -17,6 +17,7 @@ import {
 } from '../Socket/Socket'
 //import { sendNewConversationEmail } from '../utils/mail.utils' // TODO: Sonra eklenecek
 import {sendMessageSchema} from "../validators/message.validator";
+import {IUser} from "../types/user.types";
 
 // ─── SEND MESSAGE ─────────────────────────────────────────────────────────────
 // POST /api/message
@@ -25,43 +26,39 @@ import {sendMessageSchema} from "../validators/message.validator";
 // Conversation would be created after first message.
 // Sonraki mesajlarda mevcut conversation güncellenir.
 // The conversation would be updated in the following messages.
-
 export const sendMessage = async (req: Request, res: Response): Promise<any> => {
     try {
-        const parsed = sendMessageSchema.safeParse(req.body)
+        // 1. Validasyon
+        const parsed = sendMessageSchema.safeParse(req.body);
         if (!parsed.success) {
-            return res.status(400).json({ errors: z.treeifyError(parsed.error) })
+            return res.status(400).json({ errors: z.treeifyError(parsed.error) });
         }
 
-        const { listingId, text, location,
-            // offerId,
-            offerPrice, offerPricePer, offerNote } = parsed.data
-        const buyerId = req.userId!
+        const { listingId, text, location, offerPrice, offerPricePer, offerNote } = parsed.data;
+        const buyerId = req.userId;
 
-        // 1. İlanı bul
-        const listing = await Listing.findById(listingId).select('owner title type is_deleted status')
-        if (!listing || listing.is_deleted) return res.status(404).json({ error: 'İlan bulunamadı' })
+        if (!buyerId) {
+            return res.status(401).json({ error: 'Yetkilendirme hatası, lütfen giriş yapın.' });
+        }
+
+        // 2. İlan ve Kullanıcı Kontrollerini Paralel Yapalım (Performans Kazancı 🚀)
+        const [listing, buyerUser] = await Promise.all([
+            Listing.findById(listingId).select('owner title type is_deleted status'),
+            User.findById(buyerId).lean<IUser>()
+        ]);
+
+        if (!listing || listing.is_deleted) {
+            return res.status(404).json({ error: 'İlan bulunamadı' });
+        }
 
         if (listing.status !== 'active') {
-            return res.status(400).json({ error: 'Bu ilan artık aktif değil' })
+            return res.status(400).json({ error: 'Bu ilan artık aktif değil' });
         }
 
-        const sellerId = listing.owner.toString()
+        const sellerId = listing.owner.toString();
 
-        // Kendi ilanına mesaj atılamaz
         if (sellerId === buyerId) {
-            return res.status(403).json({ error: 'Kendi ilanınıza mesaj gönderemezsiniz' })
-        }
-
-        // 2. Fotoğraf yükle (varsa)
-        const files = req.files as Express.Multer.File[] | undefined
-        let photoUrls: string[] = []
-        if (files && files.length > 0) {
-            if (files.length > 5) {
-                return res.status(400).json({ error: 'Bir mesajda en fazla 5 fotoğraf gönderilebilir' })
-            }
-            const uploaded = await uploadMultiple(files, 'listingPhoto', 5)
-            photoUrls = uploaded.map(f => f.url)
+            return res.status(403).json({ error: 'Kendi ilanınıza mesaj gönderemezsiniz' });
         }
 
         // 3. Conversation bul veya oluştur
@@ -69,11 +66,16 @@ export const sendMessage = async (req: Request, res: Response): Promise<any> => 
             listing: listingId,
             seller:  sellerId,
             buyer:   buyerId,
-        })
+        });
 
-        const isNewConversation = !conversation
+        const isNewConversation = !conversation;
 
         if (!conversation) {
+            const isSenderVerified = buyerUser ? buyerUser.is_verified : false;
+            if (!isSenderVerified) {
+                return res.status(403).json({ error: 'Sadece onaylı öğrenciler yeni ilan için mesaj atabilirler.' });
+            }
+
             conversation = await Conversation.create({
                 listing:     listingId,
                 seller:      sellerId,
@@ -83,43 +85,53 @@ export const sendMessage = async (req: Request, res: Response): Promise<any> => 
                 activeOffer: null,
                 lastMessage: null,
                 offerStatus: 'No Offer',
-            })
+            });
         }
 
-        // let finalOfferId = offerId ?? null;
-        let finalOfferId = null
+        // 4. Fotoğraf yükleme sınırı kontrolü
+        const files = req.files as Express.Multer.File[] | undefined;
+        let photoUrls: string[] = [];
+        if (files && files.length > 0) {
+            if (files.length > 5) {
+                return res.status(400).json({ error: 'Bir mesajda en fazla 5 fotoğraf gönderilebilir' });
+            }
+            const uploaded = await uploadMultiple(files, 'listingPhoto', 5);
+            photoUrls = uploaded.map(f => f.url);
+        }
 
-        // --- ENTEGRE OFFER SİSTEMİ ---
-        // Eğer kullanıcı yeni bir teklifle birlikte mesaj atıyorsa
+        let finalOfferId: mongoose.Types.ObjectId | null = null;
+
+        // 5. ENTEGRE OFFER SİSTEMİ (Performans Optimize Edildi)
         if (offerPrice !== undefined) {
-             // Eski teklifleri temizle (iptal/red)
-             const pendingOffers = await Offer.find({ conversation: conversation._id, status: 'Pending' })
-             for (const pendingOffer of pendingOffers) {
-                 if (pendingOffer.applicant.toString() === buyerId) {
-                     pendingOffer.status = 'Cancelled'
-                 } else {
-                     pendingOffer.status = 'Rejected'
-                 }
-                 await pendingOffer.save()
-             }
+            // Döngü yerine tek sorguyla toplu güncelleme (Bulk Update) ⚡
+            await Promise.all([
+                Offer.updateMany(
+                    { conversation: conversation._id, applicant: buyerId, status: 'Pending' },
+                    { $set: { status: 'Cancelled' } }
+                ),
+                Offer.updateMany(
+                    { conversation: conversation._id, applicant: { $ne: buyerId }, status: 'Pending' },
+                    { $set: { status: 'Rejected' } }
+                )
+            ]);
 
-             const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000)         // +48 saat geçerlilik
-             const newOffer = await Offer.create({
-                 listing:      listingId,
-                 applicant:    buyerId,
-                 conversation: conversation._id,
-                 price:        offerPrice,
-                 pricePer:     offerPricePer,
-                 note:         offerNote ?? null,
-                 status:       'Pending',
-                 expiresAt,
-             })
-             // keep ObjectId reference (Mongoose will cast if needed)
-             finalOfferId = newOffer._id;
+            const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // +48 saat
+            const newOffer = await Offer.create({
+                listing:      listingId,
+                applicant:    buyerId,
+                conversation: conversation._id,
+                price:        offerPrice,
+                pricePer:     offerPricePer,
+                note:         offerNote ?? null,
+                status:       'Pending',
+                expiresAt,
+            });
+
+            finalOfferId = newOffer._id as mongoose.Types.ObjectId;
             conversation.offerStatus = "Offer Sent";
         }
 
-        // 4. Mesaj oluştur
+        // 6. Mesaj oluştur
         const message = await Message.create({
             conversation: conversation._id,
             sender:       buyerId,
@@ -128,22 +140,18 @@ export const sendMessage = async (req: Request, res: Response): Promise<any> => 
             photos:       photoUrls,
             location:     location ?? null,
             offer:        finalOfferId,
-        })
+        });
 
-        // 5. Mesaj önizlemesini oluştur
-        let preview = ''
-        if (text)                preview = text.slice(0, 80)
-        else if (photoUrls.length) preview = `${photoUrls.length} fotoğraf`
-        else if (location)       preview = 'Konum paylaşıldı'
-        else if (finalOfferId)        preview = 'Teklif gönderildi'
+        // Preview oluşturma mantığı (Burası gayet temiz)
+        let preview = 'Yeni bir mesaj';
+        if (text)                  preview = text.slice(0, 80);
+        else if (photoUrls.length) preview = `${photoUrls.length} fotoğraf`;
+        else if (location)         preview = 'Konum paylaşıldı';
+        else if (finalOfferId)     preview = 'Teklif gönderildi';
 
-        // 6. Buyer adını al (lastMessage için)
-        const buyerUser = await User.findById(buyerId).select('name surname')
-        const senderName = buyerUser
-            ? `${buyerUser.name} ${buyerUser.surname}`
-            : 'Kullanıcı'
+        const senderName = buyerUser ? `${buyerUser.name} ${buyerUser.surname}` : 'Kullanıcı';
 
-        // 7. Conversation'ı güncelle (lastMessage + unreadCount)
+        // 7. Conversation güncelleme ve kaydetme
         conversation.lastMessage = {
             senderId:   new mongoose.Types.ObjectId(buyerId),
             senderName,
@@ -151,59 +159,50 @@ export const sendMessage = async (req: Request, res: Response): Promise<any> => 
             type:       'user',
             sentAt:     new Date(),
             isRead:     false
-        }
-        conversation.unreadCount.seller += 1   // satıcıya 1 okunmamış eklendi
+        };
+        conversation.unreadCount.seller += 1;
 
-        await conversation.save()
+        await conversation.save();
 
-        // 8. Mesajı populate et (include offer details when present)
-        let populated = await message.populate('sender', 'name surname profile_photo')
-        try { populated = await populated.populate('offer') } catch (e) { /* ignore if no offer */ }
-
-        // 9. Socket yayınları
-        emitNewMessage(conversation._id.toString(), populated)
-        emitConversationUpdated(sellerId, buyerId, conversation)
-
-        // If a new offer was created, notify the conversation room about it
+        // 8. Koşullu Populate (Gereksiz try-catch'ten kurtulduk)
+        let populated = await message.populate('sender', 'name surname profile_photo');
         if (finalOfferId) {
-            try {
-                emitOfferUpdated(conversation._id.toString(), finalOfferId.toString(), 'Pending')
-            } catch (e) { /* best-effort emit */ }
+            populated = await populated.populate('offer');
         }
 
-        //TODO: Burada seller ve buyer'ın aktifliği sorgulanacak.
-        // Eğer uygulamada değillerse e-mail atılacak
+        // 9. Socket Yayınları
+        emitNewMessage(conversation._id.toString(), populated);
+        emitConversationUpdated(sellerId, buyerId, conversation);
 
+        // 10. Arka Plan Bildirim İşlemleri (Non-blocking)
         if (isNewConversation) {
-            // Satıcıya yeni sohbet bildirimi (socket)
-            const convPopulated = await conversation.populate([
+            // async akışı bozmamak için populate işlemini arka plana alabiliriz veya bekleyebiliriz
+            conversation.populate([
                 { path: 'listing', select: 'title' },
                 { path: 'buyer',   select: 'name surname profile_photo' },
-            ])
-            emitNewConversation(sellerId, convPopulated)
+            ]).then(convPopulated => {
+                emitNewConversation(sellerId, convPopulated);
+            });
 
-            // E-posta bildirimi (satıcıya)
-            try {
-                const seller = await User.findById(sellerId).select('email name')
+            // E-posta bildirim mantığı (TODO aşaması için hazır)
+            User.findById(sellerId).select('email name').then(seller => {
                 if (seller?.email) {
                     // sendNewConversationEmail(seller.email, seller.name, listing.title)
-                    // TODO: mail.utils'e eklenecek
                 }
-            } catch { /* e-posta başarısız olursa mesaj gönderimi engellenmez */ }
-        }//TODO: Burada seller ve buyer'ın aktifliği sorgulanacak.
-         // Eğer uygulamada değillerse e-mail atılacak
+            }).catch(err => console.error("Email notification query error:", err));
+        }
 
         return res.status(201).json({
             message:     populated,
             conversationId: conversation._id,
             isNewConversation,
-        })
+        });
 
     } catch (error) {
-        console.error('sendMessage error:', error)
-        return res.status(500).json({ error: 'Server error' })
+        console.error('sendMessage error:', error);
+        return res.status(500).json({ error: 'Server error' });
     }
-}
+};
 
 // ─── GET MESSAGES ─────────────────────────────────────────────────────────────
 // GET /api/message/:conversationId?cursor=<createdAt>&limit=30
