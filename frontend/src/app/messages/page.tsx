@@ -103,6 +103,19 @@ export default function MessagesPage() {
         };
     }, []);
 
+    useEffect(() => {
+        if (targetListingId && conversations.length > 0) {
+            const existingConv = conversations.find(c => {
+                const cListingId = typeof c.listing === 'object' ? c.listing?._id : c.listing;
+                return cListingId === targetListingId;
+            });
+
+            if (existingConv && activeConversationId !== existingConv._id) {
+                handleSelectConversation(existingConv._id);
+            }
+        }
+    }, [targetListingId, conversations]);
+
     const safeFetch = async (url: string, options: any) => {
         const res = await fetch(url, options);
         const text = await res.text();
@@ -228,12 +241,85 @@ export default function MessagesPage() {
         });
     };
 
-    const handleOfferSubmit = () => {
+    const handleOfferSubmit = async () => {
         if(!offerPrice) return;
-        sendMessageToApi({ offerPrice: offerPrice }).finally(() => {
+
+        if (!activeConversationId) {
+            alert("Teklif gönderebilmek için önce bir mesaj atarak sohbeti başlatmalısınız.");
+            return;
+        }
+
+        const token = localStorage.getItem('accessToken');
+        try {
+            const { res, data } = await safeFetch(`${API_URL}/api/offer/make`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    conversationId: activeConversationId,
+                    price: Number(offerPrice),
+                    pricePer: offerPricePer
+                })
+            });
+
+            if (!res.ok) {
+                const errorMsg = data.errors ? JSON.stringify(data.errors) : (data.error || 'Teklif gönderilemedi');
+                throw new Error(errorMsg);
+            }
+            if (data.message) {
+                setMessages(prev => {
+                    if (prev.some(m => m._id === data.message._id)) return prev;
+                    return [data.message, ...prev];
+                });
+            }
+
+        } catch (err: any) {
+            console.error("Teklif Hatası:", err);
+            alert("Teklif iletilemedi: " + err.message);
+        } finally {
             setIsOfferModalOpen(false);
             setOfferPrice('');
-        });
+        }
+    };
+
+    // accept/reject/cancel offer actions
+    const handleOfferAction = async (offerId: string, action: 'accepted' | 'rejected' | 'cancel') => {
+        const token = localStorage.getItem('accessToken');
+        if (!token) return;
+
+        try {
+            let endpoint = `${API_URL}/api/offer/${offerId}/respond`;
+            let options: any = {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ action })
+            };
+
+            if (action === 'cancel') {
+                endpoint = `${API_URL}/api/offer/${offerId}/cancel`;
+                delete options.body;
+            }
+
+            const { res, data } = await safeFetch(endpoint, options);
+
+            if (!res.ok) {
+                const errorMsg = data.errors ? JSON.stringify(data.errors) : (data.error || 'İşlem başarısız');
+                throw new Error(errorMsg);
+            }
+
+            // if action success, reload messages
+            if (activeConversationId) {
+                handleSelectConversation(activeConversationId);
+            }
+
+        } catch (err: any) {
+            alert(err.message);
+        }
     };
 
     const shareCurrentLocation = () => {
@@ -384,7 +470,7 @@ export default function MessagesPage() {
                         </div>
                     )}
 
-                    {/* SOHBET HEADER */}
+                    {/* conversation header */}
                     <div className="bg-black/40 backdrop-blur-xl border-b border-white/10 p-5 flex items-center justify-between z-10 shrink-0">
                         <div className="flex items-center gap-4">
                             <button onClick={() => setIsMenuOpen(true)} className="md:hidden text-gray-400 hover:text-white">
@@ -410,7 +496,7 @@ export default function MessagesPage() {
                         </div>
                     </div>
 
-                    {/* MESAJ BALONCUKLARI */}
+                    {/* message bubbles */}
                     <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 flex flex-col-reverse gap-4 custom-scrollbar">
                         {!activeConversationId && !targetListingId && (
                             <div className="h-full flex flex-col items-center justify-center text-gray-500 opacity-50">
@@ -420,17 +506,28 @@ export default function MessagesPage() {
                         )}
 
                         {messages.map((msg) => {
+                            const isSystem = msg.type === 'system'; // Backend'den gelen sistem mesajı kontrolü
                             const senderIdStr = typeof msg.sender === 'object' ? msg.sender?._id : msg.sender;
                             const isMe = senderIdStr === currentUserId;
 
+                            // if message is a system message
+                            if (isSystem) {
+                                return (
+                                    <div key={msg._id || Math.random()} className="flex justify-center w-full animate-in fade-in zoom-in-95 duration-300 my-2">
+                                        <div className="px-5 py-2 rounded-full bg-white/5 border border-white/10 backdrop-blur-md text-[11px] font-bold text-gray-400 uppercase tracking-widest text-center shadow-inner">
+                                            {msg.text}
+                                        </div>
+                                    </div>
+                                );
+                            }
+
+                            // if message is a user message
                             return (
                                 <div key={msg._id || Math.random()} className={`flex ${isMe ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2`}>
                                     <div className={`max-w-[85%] sm:max-w-[75%] p-4 rounded-3xl ${isMe ? 'bg-cyan-600 text-white rounded-tr-sm shadow-[0_4px_15px_rgba(8,145,178,0.3)]' : 'bg-white/5 text-gray-200 rounded-tl-sm border border-white/10'}`}>
 
-                                        {/* 1. Metin (break-words ile uzun kelimeler taşmaz) */}
                                         {msg.text && <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{msg.text}</p>}
 
-                                        {/* 2. Fotoğraflar */}
                                         {msg.photos && msg.photos.length > 0 && (
                                             <div className="flex flex-wrap gap-2 mt-2">
                                                 {msg.photos.map((p: string, idx: number) => (
@@ -439,7 +536,7 @@ export default function MessagesPage() {
                                             </div>
                                         )}
 
-                                        {/* 3. Konum Haritası Preview (iframe ile embed) */}
+                                        {/* location map preview */}
                                         {msg.location && (
                                             <div className="mt-2 w-full sm:w-72 h-48 rounded-xl overflow-hidden border border-white/20 relative bg-black/50">
                                                 <iframe
@@ -452,7 +549,7 @@ export default function MessagesPage() {
                                             </div>
                                         )}
 
-                                        {/* 4. Zenginleştirilmiş Teklif (Offer) Kartı */}
+                                        {/* offer card */}
                                         {msg.offer && typeof msg.offer === 'object' && (
                                             <div className="mt-3 bg-yellow-500/10 border border-yellow-500/30 p-4 rounded-xl w-full sm:w-64">
                                                 <div className="flex items-center justify-between mb-3">
@@ -464,17 +561,24 @@ export default function MessagesPage() {
                                                 <div className="text-3xl font-black text-white mb-1">{msg.offer.price} ₺</div>
                                                 <div className="text-xs font-medium text-gray-400 mb-3">{msg.offer.pricePer === 'One Time' ? 'Tek Sefer' : msg.offer.pricePer === 'Per Month' ? 'Aylık' : 'Seans Başı'}</div>
 
-                                                {/* Teklifi alan kişi için aksiyon butonları eklenebilir */}
+                                                {/* action buttons for the person being offered */}
                                                 {!isMe && msg.offer.status === 'Pending' && (
                                                     <div className="flex gap-2 mt-4 pt-4 border-t border-yellow-500/20">
-                                                        <button className="flex-1 py-2 bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 font-bold text-xs rounded-lg transition">Kabul Et</button>
-                                                        <button className="flex-1 py-2 bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 font-bold text-xs rounded-lg transition">Reddet</button>
+                                                        <button onClick={() => handleOfferAction(msg.offer._id, 'accepted')} className="flex-1 py-2 bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 font-bold text-xs rounded-lg transition active:scale-95">Kabul Et</button>
+                                                        <button onClick={() => handleOfferAction(msg.offer._id, 'rejected')} className="flex-1 py-2 bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 font-bold text-xs rounded-lg transition active:scale-95">Reddet</button>
+                                                    </div>
+                                                )}
+
+                                                {/*cancel buttons for the person who sent the offer */}
+                                                {isMe && msg.offer.status === 'Pending' && (
+                                                    <div className="mt-4 pt-4 border-t border-yellow-500/20">
+                                                        <button onClick={() => handleOfferAction(msg.offer._id, 'cancel')} className="w-full py-2 bg-rose-500/10 text-rose-500/70 border border-rose-500/20 hover:bg-rose-500 hover:text-white hover:shadow-[0_0_15px_rgba(244,63,94,0.4)] font-bold text-xs rounded-lg transition-all duration-300 active:scale-95">Teklifi İptal Et</button>
                                                     </div>
                                                 )}
                                             </div>
                                         )}
 
-                                        {/* 5. Zaman ve Okundu Bilgisi (Çift Tik) */}
+                                        {/* time and read info */}
                                         <div className="flex items-center justify-end gap-1.5 mt-2 opacity-70">
                                             <span className="text-[10px] block text-right">
                                                 {msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'}) : 'Şimdi'}
@@ -489,7 +593,7 @@ export default function MessagesPage() {
                         })}
                     </div>
 
-                    {/* MESAJ YAZMA ALANI (Daha yüksek olması için pb-8 eklendi) */}
+                    {/* text message bar */}
                     <div className="bg-black/60 backdrop-blur-2xl border-t border-white/10 p-4 pb-6 md:pb-8 shrink-0">
                         <div className="flex items-end gap-3">
                             <div className="flex gap-2">
