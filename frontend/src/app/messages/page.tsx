@@ -38,7 +38,7 @@ export default function MessagesPage() {
     const [inputText, setInputText] = useState('');
     const [isMenuOpen, setIsMenuOpen] = useState(true);
 
-    // Modals
+    // modals
     const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
     const [isSendingLocation, setIsSendingLocation] = useState(false);
     const [selectedMapLocation, setSelectedMapLocation] = useState({ lat: 38.4237, lng: 27.1428 });
@@ -49,7 +49,7 @@ export default function MessagesPage() {
 
     const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
-    // SOHBET EKRANI İÇİN TAM EKRAN KAYDIRMA KİLİDİ
+    // fullscreen scroll lock for conversation page
     useEffect(() => {
         document.body.style.overflow = 'hidden';
         return () => {
@@ -156,13 +156,21 @@ export default function MessagesPage() {
 
         const formData = new FormData();
 
+        let resolvedListingId = targetListingId;
+        if (activeConvData) {
+            resolvedListingId = typeof activeConvData.listing === 'object'
+                ? activeConvData.listing._id
+                : activeConvData.listing;
+        }
+
+        if (!resolvedListingId) {
+            alert("İlan bilgisi bulunamadı, mesaj gönderilemiyor.");
+            return;
+        }
+
+        formData.append('listingId', resolvedListingId as string);
         if (activeConversationId) {
             formData.append('conversationId', activeConversationId);
-        } else if (targetListingId) {
-            formData.append('listingId', targetListingId);
-        } else {
-            alert("Sohbet veya ilan bilgisi bulunamadı, mesaj gönderilemiyor.");
-            return;
         }
 
         if (payload.text) formData.append('text', payload.text);
@@ -237,7 +245,7 @@ export default function MessagesPage() {
         );
     };
 
-    // ÖZEL SCROLLBAR STİLİ
+    // custom scrollbar styles
     const scrollbarStyle = `
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
@@ -258,17 +266,17 @@ export default function MessagesPage() {
         <>
             <style>{scrollbarStyle}</style>
 
-            {/* NÜKLEER KİLİT: Sayfanın üstünden navbar kadar boşluk bırak, gerisini ekranın dibine kadar kilitle */}
             <div className="fixed top-[80px] bottom-0 left-0 right-0 flex bg-[#0B0F19] overflow-hidden z-40">
 
-                {/* SOL SİDEBAR (Yeni Gradyan) */}
+                {/* left sidebar */}
                 <div className={`${isMenuOpen ? 'flex' : 'hidden'} md:flex flex-col w-full md:w-80 h-full bg-gradient-to-b from-black/60 via-[#0B0F19] to-cyan-950/20 backdrop-blur-xl border-r border-cyan-500/10 shrink-0`}>
                     <div className="p-5 border-b border-white/10 bg-white/5">
                         <h2 className="text-xl font-black text-white px-2">Sohbetlerim</h2>
                     </div>
                     <div className="flex-1 overflow-y-auto custom-scrollbar py-3 space-y-2 px-3">
                         {isConversationsLoading ? (
-                            /* YÜKLENİYOR (SKELETON) ANİMASYONU */
+
+                            /* loading animation */
                             [...Array(6)].map((_, i) => (
                                 <div key={i} className="w-full p-3 rounded-2xl border border-white/5 bg-white/5 animate-pulse flex gap-3 items-center">
                                     <div className="w-12 h-12 rounded-full bg-white/10 flex-shrink-0"></div>
@@ -323,10 +331,10 @@ export default function MessagesPage() {
                     </div>
                 </div>
 
-                {/* SAĞ SOHBET ALANI (Yeni Gradyan ve min-w-0 kilitleri) */}
+                {/* right conversation area */}
                 <div className={`${!isMenuOpen ? 'flex' : 'hidden'} md:flex flex-1 flex-col h-full bg-gradient-to-br from-[#0B0F19] via-[#0B0F19] to-indigo-950/10 relative min-w-0`}>
 
-                    {/* MODALS */}
+                    {/* modals */}
                     {isLocationModalOpen && (
                         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md transition-all">
                             <div className="bg-[#0B0F19] border border-white/10 rounded-[2.5rem] p-8 w-full max-w-md shadow-[0_0_50px_rgba(0,0,0,0.5)] animate-in zoom-in-95 duration-200">
