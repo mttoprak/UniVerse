@@ -39,6 +39,11 @@ export default function MessagesPage() {
     const [isMenuOpen, setIsMenuOpen] = useState(true);
     const [isPeerTyping, setIsPeerTyping] = useState(false);
     const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const activeConvRef = useRef<string | null>(null);
+
+    useEffect(() => {
+        activeConvRef.current = activeConversationId;
+    }, [activeConversationId]);
 
     // modals
     const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
@@ -60,6 +65,8 @@ export default function MessagesPage() {
     }, []);
 
     useEffect(() => {
+        let activeSocket: Socket | null = null; // React çift render (Strict Mode) koruması
+
         const initializeChat = async () => {
             const token = localStorage.getItem('accessToken');
             if (!token) {
@@ -77,45 +84,52 @@ export default function MessagesPage() {
                 const myId = userData.user?._id || userData._id;
                 setCurrentUserId(myId);
 
-                const newSocket = io(API_URL, {
+                activeSocket = io(API_URL, {
                     withCredentials: true,
                     auth: { token: `Bearer ${token}` }
                 });
-                setSocket(newSocket);
-                newSocket.on('connect', () => console.log('Socket bağlandı:', newSocket.id));
+                setSocket(activeSocket);
 
-                // 1. Yeni Mesaj Geldiğinde
-                newSocket.on('new_message', (msg) => {
-                    setMessages((prev) => {
-                        if (prev.some(m => m._id === msg._id)) return prev;
-                        return [msg, ...prev];
-                    });
+                activeSocket.on('connect', () => console.log('✅ Socket Bağlandı ID:', activeSocket?.id));
+
+                // 1. YENİ MESAJ GELDİĞİNDE
+                activeSocket.on('new_message', (msg) => {
+                    console.log("🔥 SOKET YAKALADI (Yeni Mesaj):", msg);
+                    // Sadece o an ekranda AÇIK OLAN sohbete aitse listeye ekle
+                    if (msg.conversation === activeConvRef.current) {
+                        setMessages((prev) => {
+                            if (prev.some(m => m._id === msg._id)) return prev;
+                            return [msg, ...prev];
+                        });
+                    }
                 });
 
-                // 2. Karşı Taraf Mesajları Okuduğunda (Çift Mavi Tik)
-                newSocket.on('messages_read', ({ conversationId }) => {
-                    setMessages(prev => prev.map(m =>
-                        (m.conversation === conversationId && !m.isRead) ? { ...m, isRead: true } : m
-                    ));
+                // 2. MESAJLAR OKUNDUĞUNDA
+                activeSocket.on('messages_read', ({ conversationId }) => {
+                    if (conversationId === activeConvRef.current) {
+                        setMessages(prev => prev.map(m =>
+                            (m.conversation === conversationId && !m.isRead) ? { ...m, isRead: true } : m
+                        ));
+                    }
                 });
 
-                // 3. Karşı Taraf Yazıyor...
-                newSocket.on('user_typing', () => setIsPeerTyping(true));
-                newSocket.on('user_stop_typing', () => setIsPeerTyping(false));
+                // 3. YAZIYOR GÖSTERGESİ
+                activeSocket.on('user_typing', ({ conversationId }) => {
+                    if (conversationId === activeConvRef.current) setIsPeerTyping(true);
+                });
+                activeSocket.on('user_stop_typing', ({ conversationId }) => {
+                    if (conversationId === activeConvRef.current) setIsPeerTyping(false);
+                });
 
-                // 4. Teklif Durumu Anlık Değiştiğinde (Kabul/Red/İptal)
-                newSocket.on('offer_updated', ({ offerId, status }) => {
+                // 4. TEKLİF VE SOHBET GÜNCELLEMELERİ
+                activeSocket.on('offer_updated', ({ offerId, status }) => {
                     setMessages(prev => prev.map(m => {
-                        if (m.offer && m.offer._id === offerId) {
-                            return { ...m, offer: { ...m.offer, status } };
-                        }
+                        if (m.offer && m.offer._id === offerId) return { ...m, offer: { ...m.offer, status } };
                         return m;
                     }));
                 });
-
-                // 5. Sohbet Listesi Güncellenmesi Gerektiğinde (Yeni mesaj/sohbet)
-                newSocket.on('conversation_updated', () => fetchConversations(token));
-                newSocket.on('new_conversation', () => fetchConversations(token));
+                activeSocket.on('conversation_updated', () => fetchConversations(token));
+                activeSocket.on('new_conversation', () => fetchConversations(token));
 
                 fetchConversations(token);
 
@@ -126,10 +140,14 @@ export default function MessagesPage() {
 
         initializeChat();
 
+        // CLEANUP: Sayfa değiştiğinde veya React tekrar render attığında eski soketi öldür!
         return () => {
-            if (socket) socket.disconnect();
+            if (activeSocket) {
+                activeSocket.disconnect();
+                console.log("🧹 Eski socket temizlendi");
+            }
         };
-    }, []);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         if (targetListingId && conversations.length > 0) {
