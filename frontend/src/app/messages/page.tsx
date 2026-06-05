@@ -79,7 +79,7 @@ export default function MessagesPage() {
 
                 const newSocket = io(API_URL, {
                     withCredentials: true,
-                    extraHeaders: { Authorization: `Bearer ${token}` }
+                    auth: { token: `Bearer ${token}` }
                 });
                 setSocket(newSocket);
                 newSocket.on('connect', () => console.log('Socket bağlandı:', newSocket.id));
