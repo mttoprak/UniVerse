@@ -37,6 +37,8 @@ export default function MessagesPage() {
 
     const [inputText, setInputText] = useState('');
     const [isMenuOpen, setIsMenuOpen] = useState(true);
+    const [isPeerTyping, setIsPeerTyping] = useState(false);
+    const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     // modals
     const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
@@ -80,14 +82,40 @@ export default function MessagesPage() {
                     extraHeaders: { Authorization: `Bearer ${token}` }
                 });
                 setSocket(newSocket);
-
                 newSocket.on('connect', () => console.log('Socket bağlandı:', newSocket.id));
+
+                // 1. Yeni Mesaj Geldiğinde
                 newSocket.on('new_message', (msg) => {
                     setMessages((prev) => {
                         if (prev.some(m => m._id === msg._id)) return prev;
                         return [msg, ...prev];
                     });
                 });
+
+                // 2. Karşı Taraf Mesajları Okuduğunda (Çift Mavi Tik)
+                newSocket.on('messages_read', ({ conversationId }) => {
+                    setMessages(prev => prev.map(m =>
+                        (m.conversation === conversationId && !m.isRead) ? { ...m, isRead: true } : m
+                    ));
+                });
+
+                // 3. Karşı Taraf Yazıyor...
+                newSocket.on('user_typing', () => setIsPeerTyping(true));
+                newSocket.on('user_stop_typing', () => setIsPeerTyping(false));
+
+                // 4. Teklif Durumu Anlık Değiştiğinde (Kabul/Red/İptal)
+                newSocket.on('offer_updated', ({ offerId, status }) => {
+                    setMessages(prev => prev.map(m => {
+                        if (m.offer && m.offer._id === offerId) {
+                            return { ...m, offer: { ...m.offer, status } };
+                        }
+                        return m;
+                    }));
+                });
+
+                // 5. Sohbet Listesi Güncellenmesi Gerektiğinde (Yeni mesaj/sohbet)
+                newSocket.on('conversation_updated', () => fetchConversations(token));
+                newSocket.on('new_conversation', () => fetchConversations(token));
 
                 fetchConversations(token);
 
@@ -115,6 +143,23 @@ export default function MessagesPage() {
             }
         }
     }, [targetListingId, conversations]);
+
+    // MESAJLARI OKUNDU OLARAK İŞARETLE
+    useEffect(() => {
+        if (socket && activeConversationId) {
+            // Sohbete girildiğinde veya yeni mesaj geldiğinde okundu bildirimi gönder
+            socket.emit('mark_read', activeConversationId);
+
+            // Sohbet listesindeki (sol menü) kırmızı bildirim sayısını (unreadCount) yerel olarak sıfırla
+            setConversations(prev => prev.map(c => {
+                if (c._id === activeConversationId) {
+                    const isSeller = c.seller?._id === currentUserId || c.seller === currentUserId;
+                    return { ...c, unreadCount: { ...c.unreadCount, [isSeller ? 'seller' : 'buyer']: 0 } };
+                }
+                return c;
+            }));
+        }
+    }, [activeConversationId, messages.length, socket]);
 
     const safeFetch = async (url: string, options: any) => {
         const res = await fetch(url, options);
@@ -241,47 +286,13 @@ export default function MessagesPage() {
         });
     };
 
-    const handleOfferSubmit = async () => {
+    const handleOfferSubmit = () => {
         if(!offerPrice) return;
 
-        if (!activeConversationId) {
-            alert("Teklif gönderebilmek için önce bir mesaj atarak sohbeti başlatmalısınız.");
-            return;
-        }
+        sendMessageToApi({ offerPrice: offerPrice });
 
-        const token = localStorage.getItem('accessToken');
-        try {
-            const { res, data } = await safeFetch(`${API_URL}/api/offer/make`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    conversationId: activeConversationId,
-                    price: Number(offerPrice),
-                    pricePer: offerPricePer
-                })
-            });
-
-            if (!res.ok) {
-                const errorMsg = data.errors ? JSON.stringify(data.errors) : (data.error || 'Teklif gönderilemedi');
-                throw new Error(errorMsg);
-            }
-            if (data.message) {
-                setMessages(prev => {
-                    if (prev.some(m => m._id === data.message._id)) return prev;
-                    return [data.message, ...prev];
-                });
-            }
-
-        } catch (err: any) {
-            console.error("Teklif Hatası:", err);
-            alert("Teklif iletilemedi: " + err.message);
-        } finally {
-            setIsOfferModalOpen(false);
-            setOfferPrice('');
-        }
+        setIsOfferModalOpen(false);
+        setOfferPrice('');
     };
 
     // accept/reject/cancel offer actions
@@ -483,7 +494,11 @@ export default function MessagesPage() {
                                         {activeConvData ? (
                                             <>
                                                 <h2 className="font-bold text-white uppercase">{activeConvData.seller?._id === currentUserId ? activeConvData.buyer?.username : activeConvData.seller?.username}</h2>
-                                                <p className="text-xs text-cyan-400 flex items-center gap-1">İlan: {activeConvData.listing?.title}</p>
+                                                {isPeerTyping ? (
+                                                    <p className="text-xs text-emerald-400 font-bold animate-pulse flex items-center gap-1">Yazıyor...</p>
+                                                ) : (
+                                                    <p className="text-xs text-cyan-400 flex items-center gap-1 truncate max-w-[200px] sm:max-w-xs">İlan: {activeConvData.listing?.title}</p>
+                                                )}
                                             </>
                                         ) : (
                                             <h2 className="font-bold text-white">Yeni Sohbet Başlatılıyor...</h2>
@@ -602,7 +617,23 @@ export default function MessagesPage() {
                             </div>
                             <form onSubmit={handleTextSubmit} className="flex-1 flex items-center gap-3">
                                 <div className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-4 py-3 focus-within:border-cyan-500/40 transition-all">
-                                    <input type="text" value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="Mesajınızı yazın..." className="w-full bg-transparent outline-none text-sm" disabled={!activeConversationId && !targetListingId} />
+                                    <input
+                                        type="text"
+                                        value={inputText}
+                                        onChange={(e) => {
+                                            setInputText(e.target.value);
+                                            if (socket && activeConversationId) {
+                                                socket.emit('typing', activeConversationId);
+                                                if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+                                                typingTimeoutRef.current = setTimeout(() => {
+                                                    socket.emit('stop_typing', activeConversationId);
+                                                }, 2000);
+                                            }
+                                        }}
+                                        placeholder="Mesajınızı yazın..."
+                                        className="w-full bg-transparent outline-none text-sm"
+                                        disabled={!activeConversationId && !targetListingId}
+                                    />
                                 </div>
                                 <button type="submit" disabled={(!inputText.trim()) || (!activeConversationId && !targetListingId)} className="p-3.5 rounded-2xl bg-cyan-500 text-black hover:bg-cyan-400 disabled:opacity-30 disabled:hover:bg-cyan-500 transition-all shadow-[0_0_15px_rgba(34,211,238,0.2)]"><Send size={22} /></button>
                             </form>
