@@ -232,9 +232,7 @@ export const sendMessage = async (req: Request, res: Response): Promise<any> => 
                 emitNewConversation(sellerId, convPopulated);
             });
 
-            User.findById(sellerId).select('email name').then(seller => {
-                // sendNewConversationEmail(seller.email, seller.name, listing.title)
-            }).catch(err => console.error("Email notification error:", err));
+
         }
 
         return res.status(201).json({
