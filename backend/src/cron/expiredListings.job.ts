@@ -33,7 +33,7 @@ export const startExpiredListingsCron = () => {
     // 1. Sunucu ayağa kalkar kalkmaz hemen BİR KERE temizlik yap
     sweepExpiredListings();
 
-    // 2. Ardından her saat başı calismaya devam etmesi için timer kur
+    // 2. Ardından her saat başı calismaya devam etmesi için cron kur
     cron.schedule('0 * * * *', sweepExpiredListings);
 
     console.log('[CRON] Sweeper servisi (Süresi Dolmuş İlanlar) başlatıldı ve ilk tarama yapılıyor.');

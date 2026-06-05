@@ -3,12 +3,13 @@ import { IConversation } from '../types/conversation.types'
 
 const lastMessageSchema = new Schema(
     {
-        senderId:   { type: Schema.Types.ObjectId, ref: 'User', required: true },
-        senderName: { type: String, required: true },
-        preview:    { type: String,  default: '' },
-        type:       { type: String, enum: ['user', 'system'], default: 'user' },
-        sentAt:     { type: Date, required: true },
-        isRead:     { type: Boolean, default: false },
+        senderId:       { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        senderName:     { type: String, required: true },
+        preview:        { type: String,  default: '' },
+        type:           { type: String, enum: ['user', 'system'], default: 'user' },
+        sentAt:         { type: Date, required: true },
+        isRead:         { type: Boolean, default: false },
+        emailNotified:  { type: Boolean, default: false },
     },
     { _id: false }
 )
