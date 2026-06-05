@@ -28,6 +28,7 @@ import messageRouter from "./routes/message.router";
 import offerRouter from "./routes/offer.router";
 import { startExpiredListingsCron } from "./cron/expiredListings.job";
 import {initSocket} from "./Socket/Socket";
+import {startMessageEmailCron} from "./cron/sendMessageEmail.job";
 
 
 
@@ -45,14 +46,14 @@ app.use(cors({
 // ─── ROUTES ──────────────────────────────────
 
 // We will add these in the future
-app.use("/api/auth", authRouter)
-app.use("/api/misc", miscRouter)
+app.use("/api/auth", authRouter);
+app.use("/api/misc", miscRouter);
 app.use('/api/test', testRouter);
 app.use('/api/listing', listingRouter);
 app.use('/api/comment', commendRouter);
-app.use("/api/user", userRouter)
-app.use("/api/messaging", messageRouter)
-app.use("/api/offer", offerRouter)
+app.use("/api/user", userRouter);
+app.use("/api/messaging", messageRouter);
+app.use("/api/offer", offerRouter);
 
 
 // app.use("/api/auth", authRoutes)
@@ -85,6 +86,8 @@ const start = async () => {
 
         // Zamanlanmış görevleri başlat
         startExpiredListingsCron(); //TODO: EXPIRE OLMUŞ OFFER'LARI CANCELLAMAK GEREKİYOR
+
+        startMessageEmailCron();
 
         app.listen(PORT, () => {
             console.log(`Server running on http://localhost:${PORT}`)

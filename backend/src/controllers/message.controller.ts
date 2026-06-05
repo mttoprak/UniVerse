@@ -111,14 +111,14 @@ export const sendMessage = async (req: Request, res: Response): Promise<any> => 
                 }
 
                 conversation = await Conversation.create({
-                    listing:     listingId,
-                    seller:      sellerId,
-                    buyer:       buyerId,
-                    unreadCount: { seller: 0, buyer: 0 },
-                    status:      'active',
-                    activeOffer: null,
-                    lastMessage: null,
-                    offerStatus: 'No Offer',
+                    listing:        listingId,
+                    seller:         sellerId,
+                    buyer:          buyerId,
+                    unreadCount:    { seller: 0, buyer: 0 },
+                    status:         'active',
+                    activeOffer:    null,
+                    lastMessage:    null,
+                    offerStatus:    'No Offer',
                 });
                 isNewConversation = true;
             }
@@ -198,9 +198,10 @@ export const sendMessage = async (req: Request, res: Response): Promise<any> => 
             senderId:   new mongoose.Types.ObjectId(currentUserId),
             senderName,
             preview,
-            type:       'user',
-            sentAt:     new Date(),
-            isRead:     false
+            type:           'user',
+            sentAt:         new Date(),
+            isRead:         false,
+            emailNotified:  false,
         };
 
         if (currentUserId === buyerId) {
@@ -209,6 +210,7 @@ export const sendMessage = async (req: Request, res: Response): Promise<any> => 
             conversation.unreadCount.buyer += 1;
         }
 
+        console.log(conversation);
         await conversation.save();
 
         // 7. Popülasyonlar

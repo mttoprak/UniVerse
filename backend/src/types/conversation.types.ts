@@ -2,12 +2,14 @@ import { Document, Types } from 'mongoose'
 import { MessageContentType } from './message.types'
 
 export interface ILastMessage {
-    senderId:   Types.ObjectId
-    senderName: string
-    preview:    string             //We need to send 80 char to frontend
-    type:       MessageContentType
-    sentAt:     Date
-    isRead:     boolean
+    senderId:       Types.ObjectId
+    senderName:     string
+    preview:        string             //We need to send 80 char to frontend
+    type:           MessageContentType
+    sentAt:         Date
+    isRead:         boolean
+    emailNotified:  boolean
+
 }
 
 export interface IUnreadCount {
