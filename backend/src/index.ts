@@ -89,7 +89,7 @@ const start = async () => {
 
         startMessageEmailCron();
 
-        app.listen(PORT, () => {
+        httpServer.listen(PORT, () => {
             console.log(`Server running on http://localhost:${PORT}`)
         })
     } catch (error) {

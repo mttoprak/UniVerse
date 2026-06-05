@@ -161,6 +161,12 @@ export default function MessagesPage() {
         }
     }, [activeConversationId, messages.length, socket]);
 
+    useEffect(() => {
+        if (socket && activeConversationId) {
+            socket.emit('join_conversation', activeConversationId);
+        }
+    }, [socket, activeConversationId]);
+
     const safeFetch = async (url: string, options: any) => {
         const res = await fetch(url, options);
         const text = await res.text();
@@ -200,7 +206,6 @@ export default function MessagesPage() {
             if (data.messages) {
                 setMessages(data.messages.reverse());
             }
-            if (socket) socket.emit('join_conversation', convId);
         } catch (err) {
             console.error('Mesajlar çekilemedi', err);
         }
