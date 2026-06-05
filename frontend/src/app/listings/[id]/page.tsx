@@ -124,7 +124,7 @@ export default function AdDetailPage() {
             router.push('/login');
             return;
         }
-""
+
         router.push(`/messages?listingId=${id}`);
     };
 
