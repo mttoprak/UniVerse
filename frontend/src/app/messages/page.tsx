@@ -86,7 +86,10 @@ export default function MessagesPage() {
 
                 activeSocket = io(API_URL, {
                     withCredentials: true,
-                    auth: { token: `Bearer ${token}` }
+                    auth: { token: `Bearer ${token}` },
+                    extraHeaders: {
+                        'ngrok-skip-browser-warning': 'true'
+                    }
                 });
                 setSocket(activeSocket);
 
@@ -95,12 +98,19 @@ export default function MessagesPage() {
                 // 1. YENİ MESAJ GELDİĞİNDE
                 activeSocket.on('new_message', (msg) => {
                     console.log("🔥 SOKET YAKALADI (Yeni Mesaj):", msg);
-                    // Sadece o an ekranda AÇIK OLAN sohbete aitse listeye ekle
-                    if (msg.conversation === activeConvRef.current) {
+
+                    const msgConvId = typeof msg.conversation === 'object' && msg.conversation !== null
+                        ? msg.conversation._id
+                        : msg.conversation;
+
+                    if (String(msgConvId) === String(activeConvRef.current)) {
+                        console.log("✅ ID'ler eşleşti, mesaj ekrana basılıyor!");
                         setMessages((prev) => {
-                            if (prev.some(m => m._id === msg._id)) return prev;
+                            if (prev.some(m => String(m._id) === String(msg._id))) return prev;
                             return [msg, ...prev];
                         });
+                    } else {
+                        console.log("⚠️ Mesaj geldi ama arka plandaki başka bir sohbete ait.");
                     }
                 });
 
@@ -186,7 +196,14 @@ export default function MessagesPage() {
     }, [socket, activeConversationId]);
 
     const safeFetch = async (url: string, options: any) => {
-        const res = await fetch(url, options);
+        const mergedOptions = {
+            ...options,
+            headers: {
+                ...options?.headers,
+                'ngrok-skip-browser-warning': 'true'
+            }
+        };
+        const res = await fetch(url, mergedOptions);
         const text = await res.text();
         try {
             const data = JSON.parse(text);
