@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams, useRouter } from 'next/navigation';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { Send, MapPin, Loader2, ArrowLeft, ArrowRight, Navigation, Tag, Store, CheckCheck, Check } from 'lucide-react';
 import { GoogleMap, useJsApiLoader, Marker } from '@react-google-maps/api';
@@ -18,7 +18,7 @@ const darkMapStyle = [
 
 const mapContainerStyle = { width: '100%', height: '100%', borderRadius: '0.75rem' };
 
-export default function MessagesPage() {
+function MessagesContent() {
     const router = useRouter();
     const { isLoaded } = useJsApiLoader({
         id: 'google-map-script',
@@ -653,5 +653,18 @@ export default function MessagesPage() {
                 </div>
             </div>
         </>
+    );
+}
+
+export default function MessagesPage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen pt-28 flex flex-col items-center justify-center bg-[#0B0F19]">
+                <Loader2 className="w-12 h-12 text-cyan-500 animate-spin mb-4" />
+                <p className="text-cyan-400 font-bold uppercase tracking-widest animate-pulse">Sohbetler Yükleniyor...</p>
+            </div>
+        }>
+            <MessagesContent />
+        </Suspense>
     );
 }
