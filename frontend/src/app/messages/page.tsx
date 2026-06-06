@@ -65,7 +65,7 @@ export default function MessagesPage() {
     }, []);
 
     useEffect(() => {
-        let activeSocket: Socket | null = null; // React çift render (Strict Mode) koruması
+        let activeSocket: Socket | null = null;
 
         const initializeChat = async () => {
             const token = localStorage.getItem('accessToken');
@@ -86,35 +86,30 @@ export default function MessagesPage() {
 
                 activeSocket = io(API_URL, {
                     withCredentials: true,
-                    auth: { token: `Bearer ${token}` },
-                    extraHeaders: {
-                        'ngrok-skip-browser-warning': 'true'
-                    }
+                    auth: { token: `Bearer ${token}` }
                 });
                 setSocket(activeSocket);
 
-                activeSocket.on('connect', () => console.log('✅ Socket Bağlandı ID:', activeSocket?.id));
+                activeSocket.on('connect', () => console.log('Socket Bağlandı ID:', activeSocket?.id));
 
-                // 1. YENİ MESAJ GELDİĞİNDE
                 activeSocket.on('new_message', (msg) => {
-                    console.log("🔥 SOKET YAKALADI (Yeni Mesaj):", msg);
+                    console.log("SOKET YAKALADI (Yeni Mesaj):", msg);
 
                     const msgConvId = typeof msg.conversation === 'object' && msg.conversation !== null
                         ? msg.conversation._id
                         : msg.conversation;
 
                     if (String(msgConvId) === String(activeConvRef.current)) {
-                        console.log("✅ ID'ler eşleşti, mesaj ekrana basılıyor!");
+                        console.log("ID'ler eşleşti, mesaj ekrana basılıyor!");
                         setMessages((prev) => {
                             if (prev.some(m => String(m._id) === String(msg._id))) return prev;
                             return [msg, ...prev];
                         });
                     } else {
-                        console.log("⚠️ Mesaj geldi ama arka plandaki başka bir sohbete ait.");
+                        console.log("Mesaj geldi ama arka plandaki başka bir sohbete ait.");
                     }
                 });
 
-                // 2. MESAJLAR OKUNDUĞUNDA
                 activeSocket.on('messages_read', ({ conversationId }) => {
                     if (conversationId === activeConvRef.current) {
                         setMessages(prev => prev.map(m =>
@@ -123,7 +118,6 @@ export default function MessagesPage() {
                     }
                 });
 
-                // 3. YAZIYOR GÖSTERGESİ
                 activeSocket.on('user_typing', ({ conversationId }) => {
                     if (conversationId === activeConvRef.current) setIsPeerTyping(true);
                 });
@@ -131,7 +125,6 @@ export default function MessagesPage() {
                     if (conversationId === activeConvRef.current) setIsPeerTyping(false);
                 });
 
-                // 4. TEKLİF VE SOHBET GÜNCELLEMELERİ
                 activeSocket.on('offer_updated', ({ offerId, status }) => {
                     setMessages(prev => prev.map(m => {
                         if (m.offer && m.offer._id === offerId) return { ...m, offer: { ...m.offer, status } };
@@ -150,7 +143,6 @@ export default function MessagesPage() {
 
         initializeChat();
 
-        // CLEANUP: Sayfa değiştiğinde veya React tekrar render attığında eski soketi öldür!
         return () => {
             if (activeSocket) {
                 activeSocket.disconnect();
@@ -172,13 +164,10 @@ export default function MessagesPage() {
         }
     }, [targetListingId, conversations]);
 
-    // MESAJLARI OKUNDU OLARAK İŞARETLE
     useEffect(() => {
         if (socket && activeConversationId) {
-            // Sohbete girildiğinde veya yeni mesaj geldiğinde okundu bildirimi gönder
             socket.emit('mark_read', activeConversationId);
 
-            // Sohbet listesindeki (sol menü) kırmızı bildirim sayısını (unreadCount) yerel olarak sıfırla
             setConversations(prev => prev.map(c => {
                 if (c._id === activeConversationId) {
                     const isSeller = c.seller?._id === currentUserId || c.seller === currentUserId;
@@ -196,14 +185,7 @@ export default function MessagesPage() {
     }, [socket, activeConversationId]);
 
     const safeFetch = async (url: string, options: any) => {
-        const mergedOptions = {
-            ...options,
-            headers: {
-                ...options?.headers,
-                'ngrok-skip-browser-warning': 'true'
-            }
-        };
-        const res = await fetch(url, mergedOptions);
+        const res = await fetch(url, options);
         const text = await res.text();
         try {
             const data = JSON.parse(text);
@@ -335,7 +317,6 @@ export default function MessagesPage() {
         setOfferPrice('');
     };
 
-    // accept/reject/cancel offer actions
     const handleOfferAction = async (offerId: string, action: 'accepted' | 'rejected' | 'cancel') => {
         const token = localStorage.getItem('accessToken');
         if (!token) return;
@@ -363,7 +344,6 @@ export default function MessagesPage() {
                 throw new Error(errorMsg);
             }
 
-            // if action success, reload messages
             if (activeConversationId) {
                 handleSelectConversation(activeConversationId);
             }
@@ -382,7 +362,6 @@ export default function MessagesPage() {
         );
     };
 
-    // custom scrollbar styles
     const scrollbarStyle = `
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
@@ -412,8 +391,6 @@ export default function MessagesPage() {
                     </div>
                     <div className="flex-1 overflow-y-auto custom-scrollbar py-3 space-y-2 px-3">
                         {isConversationsLoading ? (
-
-                            /* loading animation */
                             [...Array(6)].map((_, i) => (
                                 <div key={i} className="w-full p-3 rounded-2xl border border-white/5 bg-white/5 animate-pulse flex gap-3 items-center">
                                     <div className="w-12 h-12 rounded-full bg-white/10 flex-shrink-0"></div>
@@ -561,11 +538,10 @@ export default function MessagesPage() {
                         )}
 
                         {messages.map((msg) => {
-                            const isSystem = msg.type === 'system'; // Backend'den gelen sistem mesajı kontrolü
+                            const isSystem = msg.type === 'system';
                             const senderIdStr = typeof msg.sender === 'object' ? msg.sender?._id : msg.sender;
                             const isMe = senderIdStr === currentUserId;
 
-                            // if message is a system message
                             if (isSystem) {
                                 return (
                                     <div key={msg._id || Math.random()} className="flex justify-center w-full animate-in fade-in zoom-in-95 duration-300 my-2">
@@ -576,7 +552,6 @@ export default function MessagesPage() {
                                 );
                             }
 
-                            // if message is a user message
                             return (
                                 <div key={msg._id || Math.random()} className={`flex ${isMe ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2`}>
                                     <div className={`max-w-[85%] sm:max-w-[75%] p-4 rounded-3xl ${isMe ? 'bg-cyan-600 text-white rounded-tr-sm shadow-[0_4px_15px_rgba(8,145,178,0.3)]' : 'bg-white/5 text-gray-200 rounded-tl-sm border border-white/10'}`}>
@@ -591,7 +566,6 @@ export default function MessagesPage() {
                                             </div>
                                         )}
 
-                                        {/* location map preview */}
                                         {msg.location && (
                                             <div className="mt-2 w-full sm:w-72 h-48 rounded-xl overflow-hidden border border-white/20 relative bg-black/50">
                                                 <iframe
@@ -604,7 +578,6 @@ export default function MessagesPage() {
                                             </div>
                                         )}
 
-                                        {/* offer card */}
                                         {msg.offer && typeof msg.offer === 'object' && (
                                             <div className="mt-3 bg-yellow-500/10 border border-yellow-500/30 p-4 rounded-xl w-full sm:w-64">
                                                 <div className="flex items-center justify-between mb-3">
@@ -616,7 +589,6 @@ export default function MessagesPage() {
                                                 <div className="text-3xl font-black text-white mb-1">{msg.offer.price} ₺</div>
                                                 <div className="text-xs font-medium text-gray-400 mb-3">{msg.offer.pricePer === 'One Time' ? 'Tek Sefer' : msg.offer.pricePer === 'Per Month' ? 'Aylık' : 'Seans Başı'}</div>
 
-                                                {/* action buttons for the person being offered */}
                                                 {!isMe && msg.offer.status === 'Pending' && (
                                                     <div className="flex gap-2 mt-4 pt-4 border-t border-yellow-500/20">
                                                         <button onClick={() => handleOfferAction(msg.offer._id, 'accepted')} className="flex-1 py-2 bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 font-bold text-xs rounded-lg transition active:scale-95">Kabul Et</button>
@@ -624,7 +596,6 @@ export default function MessagesPage() {
                                                     </div>
                                                 )}
 
-                                                {/*cancel buttons for the person who sent the offer */}
                                                 {isMe && msg.offer.status === 'Pending' && (
                                                     <div className="mt-4 pt-4 border-t border-yellow-500/20">
                                                         <button onClick={() => handleOfferAction(msg.offer._id, 'cancel')} className="w-full py-2 bg-rose-500/10 text-rose-500/70 border border-rose-500/20 hover:bg-rose-500 hover:text-white hover:shadow-[0_0_15px_rgba(244,63,94,0.4)] font-bold text-xs rounded-lg transition-all duration-300 active:scale-95">Teklifi İptal Et</button>
@@ -633,7 +604,6 @@ export default function MessagesPage() {
                                             </div>
                                         )}
 
-                                        {/* time and read info */}
                                         <div className="flex items-center justify-end gap-1.5 mt-2 opacity-70">
                                             <span className="text-[10px] block text-right">
                                                 {msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'}) : 'Şimdi'}
