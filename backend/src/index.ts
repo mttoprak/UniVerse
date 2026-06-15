@@ -90,7 +90,7 @@ const start = async () => {
         initSocket(httpServer)
 
         // Zamanlanmış görevleri başlat
-        startExpiredListingsCron(); //TODO: EXPIRE OLMUŞ OFFER'LARI CANCELLAMAK GEREKİYOR
+        startExpiredListingsCron();
 
         startMessageEmailCron();
 
