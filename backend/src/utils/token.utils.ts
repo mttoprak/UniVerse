@@ -17,12 +17,21 @@ interface TokenPayload {
 
 // Full-access — 32 Days.
 // We can discuss the time for this later.
-export const signAccessToken = (userId: string) =>
-    jwt.sign({ userId, type: "access" }, JWT_SECRET, { expiresIn: "32d" })
+export const signTempToken = (userId: string) => {
+    return jwt.sign(
+        { userId, type: "temp" },
+        process.env.JWT_TEMP_SECRET || "yedek_temp_gizli_anahtar",
+        { expiresIn: "15m" } // Temp token genelde kısa sürelidir
+    );
+};
 
-// Registration-access (Temp-access) — 1 Hour
-export const signTempToken = (userId: string) =>
-    jwt.sign({ userId, type: "temp" }, JWT_SECRET, { expiresIn: "1h" })
+export const signAccessToken = (userId: string) => {
+    return jwt.sign(
+        { userId, type: "access" },
+        process.env.JWT_SECRET || "yedek_access_gizli_anahtar",
+        { expiresIn: "7d" }
+    );
+};
 
 export const verifyToken = (token: string): TokenPayload =>
     jwt.verify(token, JWT_SECRET) as TokenPayload

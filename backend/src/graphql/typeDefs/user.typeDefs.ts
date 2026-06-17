@@ -52,10 +52,10 @@ enum AuthProvider {
     listing_count: Int!
   }
 
-  type VerificationResponse {
-    success: Boolean!
-    message: String!
-  }
+#  type VerificationResponse {
+#    success: Boolean!
+#    message: String!
+#  }
 
   input UpdateUserInput {
     username: String
@@ -63,6 +63,13 @@ enum AuthProvider {
     surname: String
     password: String
   }
+
+#input RegisterInput {
+#    email: String!
+#    name: String!
+#    surname: String!
+#    password: String!
+#}
 
   # Sadece User ile ilgili GET işlemleri
   type Query {
@@ -72,7 +79,7 @@ enum AuthProvider {
 
   # Sadece User ile ilgili POST/PATCH işlemleri
   type Mutation {
-    sendVerification(email: String!): VerificationResponse!
+#    sendVerification(email: String!): VerificationResponse!
     updateUser(input: UpdateUserInput!): User!
   }
 `;

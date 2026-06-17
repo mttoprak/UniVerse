@@ -1,4 +1,5 @@
 import { userResolvers } from "./user.resolvers";
+import {authResolvers} from "./auth.resolvers";
 // import { listingResolvers } from "./listing.resolvers";
 // import { offerResolvers } from "./offer.resolvers";
 
@@ -6,6 +7,7 @@ import { userResolvers } from "./user.resolvers";
 // Apollo Server arka planda bunların hepsini zekice tek bir devasa objede birleştirecek.
 export const resolvers = [
     userResolvers,
+    authResolvers,
     // listingResolvers,
     // offerResolvers
 ];

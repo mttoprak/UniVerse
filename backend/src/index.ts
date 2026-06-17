@@ -40,6 +40,7 @@ import { expressMiddleware } from "@as-integrations/express4";
 // import { resolvers } from "./graphql/resolvers";
 import { resolvers } from "./graphql/resolvers/index";
 import { typeDefs } from "./graphql/typeDefs/index";
+import {startPendingVerificationCron} from "./cron/expiredPendingVerification.prisma.job";
 
 const app = express()
 const httpServer = http.createServer(app)   // HTTP Server for Socket.io
@@ -96,7 +97,8 @@ const start = async () => {
         // ─── APOLLO SERVER ENTEGRASYONU (YENİ) ───────────
         const apolloServer = new ApolloServer<GraphQLContext>({
             typeDefs,
-            resolvers: resolvers as any
+            resolvers
+                // : resolvers as any
         });
 
         await apolloServer.start();
@@ -114,6 +116,8 @@ const start = async () => {
         startExpiredListingsCron();
 
         startMessageEmailCron();
+
+        startPendingVerificationCron(); //Prisma Cron
 
         httpServer.listen(PORT, () => {
             console.log(`Server running on http://localhost:${PORT}`)
