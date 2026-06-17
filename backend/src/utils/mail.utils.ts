@@ -1,3 +1,4 @@
+import "dotenv/config"; // BU SATIRI EN ÜSTE EKLE
 import { Resend } from "resend"
 
 

@@ -1,13 +1,15 @@
 {
   "compilerOptions": {
     "target": "es2022",
-    "module": "commonjs",
-    "rootDir": "./src",
+    "module": "Node16",
+    "moduleResolution": "Bundler",
     "outDir": "./dist",
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "strict": true,
     "skipLibCheck": true
   },
-  "include": ["src/**/*"]
+  "include": [
+    "src/**/*"
+  ]
 }

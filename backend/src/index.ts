@@ -34,6 +34,13 @@ import {startMessageEmailCron} from "./cron/sendMessageEmail.job";
 import { ipResolver, globalLimiter } from "./middleware/middleware";
 import adminRouter from "./routes/admin.router";
 
+import { GraphQLContext, createContext } from "./graphql/context";
+import { ApolloServer } from "@apollo/server";
+import { expressMiddleware } from "@as-integrations/express4";
+// import { resolvers } from "./graphql/resolvers";
+import { resolvers } from "./graphql/resolvers/index";
+import { typeDefs } from "./graphql/typeDefs/index";
+
 const app = express()
 const httpServer = http.createServer(app)   // HTTP Server for Socket.io
 const PORT = process.env.PORT || 5000
@@ -85,6 +92,20 @@ mongoose.connection.on("disconnected", () => {
 const start = async () => {
     try {
         await connect()
+
+        // ─── APOLLO SERVER ENTEGRASYONU (YENİ) ───────────
+        const apolloServer = new ApolloServer<GraphQLContext>({
+            typeDefs,
+            resolvers: resolvers as any
+        });
+
+        await apolloServer.start();
+
+        // TS7031 'implicit any' hatalarını önlemek için req ve res elementlerini inline tiplendiriyoruz:
+        app.use("/graphql", expressMiddleware(apolloServer, {
+            context: async ({ req, res }: { req: any; res: any }) => createContext({ req, res })
+        }));
+        // ──────────────────────────────────────────────────
 
         //Web Socket Server
         initSocket(httpServer)
