@@ -1,5 +1,6 @@
 import { userResolvers } from "./user.resolvers";
 import {authResolvers} from "./auth.resolvers";
+import {listingResolvers} from "./listing.resolvers";
 // import { listingResolvers } from "./listing.resolvers";
 // import { offerResolvers } from "./offer.resolvers";
 
@@ -8,6 +9,7 @@ import {authResolvers} from "./auth.resolvers";
 export const resolvers = [
     userResolvers,
     authResolvers,
+    listingResolvers,
     // listingResolvers,
     // offerResolvers
 ];

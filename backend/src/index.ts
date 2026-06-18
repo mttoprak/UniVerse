@@ -103,7 +103,6 @@ const start = async () => {
 
         await apolloServer.start();
 
-        // TS7031 'implicit any' hatalarını önlemek için req ve res elementlerini inline tiplendiriyoruz:
         app.use("/graphql", expressMiddleware(apolloServer, {
             context: async ({ req, res }: { req: any; res: any }) => createContext({ req, res })
         }));
@@ -120,7 +119,8 @@ const start = async () => {
         startPendingVerificationCron(); //Prisma Cron
 
         httpServer.listen(PORT, () => {
-            console.log(`Server running on http://localhost:${PORT}`)
+            console.log(`   Server running on http://localhost:${PORT}`)
+            console.log(`  GraphQL running on http://localhost:${PORT}/graphql`)
         })
     } catch (error) {
         console.error("Startup error:", error)

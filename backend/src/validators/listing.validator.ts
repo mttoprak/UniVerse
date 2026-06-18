@@ -8,7 +8,6 @@ const baseListingSchema = z.object({
     location:    z.string().min(2),
     expires:     z.coerce.number().pipe(z.union([z.literal(1), z.literal(6), z.literal(12), z.literal(24)])).optional(),
     price:       z.coerce.number().min(0).default(0),
-    is_urgent:   z.coerce.boolean().default(false),
     features: z.record(// ürünün hizmetin özellikleri burda
         z.string().trim().min(1).max(500), // Key'ler boşluktan arındırılsın ve en az 1 karakter olsun
         z.string().trim().min(1).max(500) // Value'lar boşluktan arındırılsın, en az 1, en fazla 500 karakter olsun
@@ -16,7 +15,9 @@ const baseListingSchema = z.object({
     criteria: z.record( // listing sahibinin kriterleri olabilir
         z.string().trim().min(1).max(500), // Key'ler boşluktan arındırılsın ve en az 1 karakter olsun
         z.string().trim().min(1).max(500) // Value'lar boşluktan arındırılsın, en az 1, en fazla 500 karakter olsun
-    ).optional()
+    ).optional(),
+
+    photos: z.array(z.string().url()).optional()
 
     // photos: controller'da multer ile gelir, buraya dahil değil
 })
@@ -90,27 +91,7 @@ export const createListingSchema = z.discriminatedUnion('type', [
     jobSchema,
     scholarshipSchema,
     urgentSchema,
-    noteSchema,]).superRefine((data, ctx) => {
-    const isUrgentType = data.type === 'urgent';
-
-    // 1. Acil (type: 'urgent') ise expires zorunlu olmalı
-    if (isUrgentType && !data.expires) {
-        ctx.addIssue({
-            code: "custom",
-            message: "Acil ilan tipinde bir geçerlilik süresi (expires) seçilmelidir.",
-            path: ["expires"],
-        });
-    }
-
-    // 2. Acil değilse ve expires gönderilmişse hata fırlat
-    if (!isUrgentType && data.expires) {
-        ctx.addIssue({
-            code: "custom",
-            message: "Normal ilanlar için geçerlilik süresi (expires) manuel belirlenemez.",
-            path: ["expires"],
-        });
-    }
-});
+    noteSchema,])
 
 // ─── UPDATE (tüm alanlar optional) ─────────────────────────────────────────
 
@@ -127,9 +108,22 @@ export const updateListingSchema = z.object({
         z.string().trim().min(1),
         z.string().trim().min(1).max(500)
     ).optional(),
+
+    photos:      z.array(z.string().url()).optional(),
     // type değiştirilemez — discriminator sabit kalır
 }); // Dikkat: .superRefine() bloğunu tamamen sildik!
+
+export const listingSchemasMap = {
+    secondhand: secondhandSchema,
+    roommate: roommateSchema,
+    carpooling: carpoolingSchema,
+    course: courseSchema,
+    job: jobSchema,
+    scholarship: scholarshipSchema,
+    urgent: urgentSchema,
+    note: noteSchema,
+};
+
 // ─── TYPES ──────────────────────────────────────────────────────────────────
 
 export type CreateListingInput = z.infer<typeof createListingSchema>
-export type UpdateListingInput = z.infer<typeof updateListingSchema>

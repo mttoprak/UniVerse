@@ -1,4 +1,5 @@
 export const listingTypeDefs = `#graphql
+scalar JSON
 
 enum ListingType {
     secondhand
@@ -25,6 +26,14 @@ enum ItemCondition {
     fair
 }
 
+type SignatureResponse {
+    timestamp: Int!
+    signature: String!
+    cloudName: String!
+    apiKey: String!
+    folder: String!
+}
+
 type SavedList {
     id: ID!
     name: String!
@@ -46,6 +55,7 @@ type Listing {
     title: String!
     description: String!
     price: Float
+    location: String! 
     type: ListingType!
     status: ListingStatus!
 
@@ -85,10 +95,12 @@ type Listing {
 input CreateListingInput {
     title: String!
     description: String!
+    location: String!
     type: ListingType!
     price: Float
     features: JSON
     criteria: JSON
+    expires: Int
     
     # Multer dosya yükleme mantığını REST veya Cloudinary signed-url ile bağlayacağız.
     photos: [String!]
@@ -132,8 +144,8 @@ type Query {
     getMyListings: [Listing!]!
 
     # router.get('/')
-    getListings: [Listing!]!
-
+    getListings(q: String, type: String, category: String, sort: String, page: Int, limit: Int): [Listing!]!
+    
     # router.get('/feed')
     getFeedListings: [Listing!]!
 
@@ -160,5 +172,7 @@ type Mutation {
 
     # router.patch('/:id/republish')
     republishListing(id: ID!): Listing!
+
+    generateUploadSignature(folderName: String!): SignatureResponse!
 }
 `;
