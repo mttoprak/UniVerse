@@ -1,7 +1,10 @@
-import { GraphQLContext } from "../context";
+import {GraphQLContext, prisma} from "../context";
 import { checkAuth } from "../guards";
 import bcrypt from "bcryptjs";
 import GraphQLJSON from "graphql-type-json"; // JSON verilerini çözebilmesi için ekledik
+
+const generateCode = (): string =>
+    Math.floor(100000 + Math.random() * 900000).toString()
 
 export const userResolvers = {
     // Şemadaki "scalar JSON" ifadesinin nasıl çözüleceğini GraphQL'e öğretiyoruz
@@ -17,6 +20,8 @@ export const userResolvers = {
         },
 
         getPublicProfile: async (_parent: any, args: { id: string }, context: GraphQLContext) => {
+            checkAuth(context);
+
             const user = await context.prisma.user.findUnique({
                 where: { id: args.id },
                 select: {
@@ -59,6 +64,97 @@ export const userResolvers = {
             });
 
             return updatedUser;
+        },
+
+        sendEduVerification: async (_parent: any, _args: any, context: GraphQLContext) => {
+            checkAuth(context);
+
+            const user = context.user;
+
+            // 1. Guard Clauses (Kontroller)
+            if (user?.account_type !== "student") {
+                throw new Error("Sadece öğrenciler edu mail ekleyebilir.");
+            }
+            if (!user?.edu_email) {
+                throw new Error("Edu Mail adresi bulunamadı.");
+            }
+            if (user?.is_verified) {
+                throw new Error("Kullanıcı zaten doğrulanmış bir öğrenci.");
+            }
+
+            // 2. Kod Üretimi ve Hashleme
+            const code = generateCode(); // Bu fonksiyonun 6 haneli string ürettiğini varsayıyoruz
+            const hashedCode = await bcrypt.hash(code, 10);
+            const expires = new Date(Date.now() + 10 * 60 * 1000); // +10 dakika
+
+            // 3. Veritabanına Kayıt (Upsert)
+            await context.prisma.pendingVerification.upsert({
+                where:  { email: user.edu_email },
+                update: { code: hashedCode, expires },
+                create: { email: user.edu_email, code: hashedCode, expires },
+            });
+
+            // TODO: Burada mail gönderme fonksiyonunu çağırmalısın (örn: sendMail(user.edu_email, code))
+            if (process.env.DEVPROCESS === "true") {
+                console.log(`[DEV] Generated Code for ${user.edu_email}: ${code}`);
+            }
+
+            return "Doğrulama kodu başarıyla gönderildi.";
+        },
+
+        verifyEduMail: async (_parent: any, args: { input: { code: string } }, context: GraphQLContext) => {
+            checkAuth(context);
+
+            const { code } = args.input;
+            const user = context.user;
+
+            // 1. Guard Clauses
+            if (user?.account_type !== "student") {
+                throw new Error("Sadece öğrenciler edu mail ekleyebilir.");
+            }
+            if (!user?.edu_email) {
+                throw new Error("Edu Mail adresi bulunamadı.");
+            }
+            if (user?.is_verified) {
+                throw new Error("Kullanıcı zaten doğrulanmış bir öğrenci.");
+            }
+
+            // 2. Bekleyen Doğrulama Var mı Kontrolü
+            const verification = await context.prisma.pendingVerification.findUnique({
+                where: { email: user.edu_email }
+            });
+
+            if (!verification) {
+                throw new Error("Doğrulama talebi bulunamadı veya süresi dolmuş.");
+            }
+
+            // 3. Süre Kontrolü (Expire Check)
+            if (new Date() > new Date(verification.expires)) {
+                throw new Error("Doğrulama kodunun süresi dolmuş. Lütfen yeni bir kod isteyin.");
+            }
+
+            // 4. Kod Eşleşme Kontrolü & Dev Mode Bypass
+            const isCodeValid = await bcrypt.compare(code, verification.code);
+            const isDevBypass = process.env.DEVPROCESS === "true" && code === "000000";
+
+            if (!isCodeValid && !isDevBypass) {
+                throw new Error("Geçersiz doğrulama kodu.");
+            }
+
+            // 5. Başarılı Senaryo: Kullanıcıyı doğrula ve geçici veriyi sil (Transaction ile)
+            await context.prisma.$transaction([
+                // Kullanıcıyı doğrulanmış yap
+                context.prisma.user.update({
+                    where: { id: user.id },
+                    data: { is_verified: true }
+                }),
+                // Kullanılan kodu temizle
+                context.prisma.pendingVerification.delete({
+                    where: { email: user.edu_email }
+                })
+            ]);
+
+            return "Edu mail adresiniz başarıyla doğrulandı.";
         }
     }
 };

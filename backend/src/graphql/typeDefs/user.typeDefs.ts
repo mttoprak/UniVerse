@@ -71,6 +71,10 @@ enum AuthProvider {
 #    password: String!
 #}
 
+input VerifyEduMailInput {
+    code: String!
+}
+
   # Sadece User ile ilgili GET işlemleri
   type Query {
     getMe: User
@@ -81,5 +85,11 @@ enum AuthProvider {
   type Mutation {
 #    sendVerification(email: String!): VerificationResponse!
     updateUser(input: UpdateUserInput!): User!
+
+      # sendEduVerification için input argümanına gerek yok, çünkü email zaten context'teki user'dan alınıyor
+      sendEduVerification: String!
+
+      # Kod doğrulaması için input alıyoruz
+      verifyEduMail(input: VerifyEduMailInput!): String!
   }
 `;

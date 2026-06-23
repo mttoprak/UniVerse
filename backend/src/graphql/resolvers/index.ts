@@ -1,6 +1,7 @@
 import { userResolvers } from "./user.resolvers";
-import {authResolvers} from "./auth.resolvers";
-import {listingResolvers} from "./listing.resolvers";
+import { authResolvers } from "./auth.resolvers";
+import { listingResolvers } from "./listing.resolvers";
+import { messagingResolvers } from "./messaging.resolvers";
 // import { listingResolvers } from "./listing.resolvers";
 // import { offerResolvers } from "./offer.resolvers";
 
@@ -10,6 +11,7 @@ export const resolvers = [
     userResolvers,
     authResolvers,
     listingResolvers,
+    messagingResolvers
     // listingResolvers,
     // offerResolvers
 ];

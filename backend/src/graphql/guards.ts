@@ -14,7 +14,7 @@ export const checkAuth = (context: GraphQLContext) => {
 
 export const checkStudentOnly = (context: GraphQLContext) => {
     checkAuth(context);
-    if (context.user?.account_type !== "student") {
-        throw new Error("FORBIDDEN: Bu işleme sadece üniversite öğrencileri yetkilidir.");
+    if (context.user?.account_type !== "student" && context.user?.is_verified !==true) {
+        throw new Error("FORBIDDEN: Bu işleme sadece doğrulanmış üniversite öğrencileri yetkilidir.");
     }
 };

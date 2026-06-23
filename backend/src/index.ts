@@ -29,8 +29,8 @@ import commendRouter from "./routes/commend.router";
 import messageRouter from "./routes/message.router";
 import offerRouter from "./routes/offer.router";
 import { startExpiredListingsCron } from "./cron/expiredListings.job";
-import {initSocket} from "./Socket/Socket";
-import {startMessageEmailCron} from "./cron/sendMessageEmail.job";
+import { initSocket } from "./Socket/Socket";
+import { startMessageEmailCron } from "./cron/sendMessageEmail.job";
 import { ipResolver, globalLimiter } from "./middleware/middleware";
 import adminRouter from "./routes/admin.router";
 
@@ -41,6 +41,13 @@ import { expressMiddleware } from "@as-integrations/express4";
 import { resolvers } from "./graphql/resolvers/index";
 import { typeDefs } from "./graphql/typeDefs/index";
 import {startPendingVerificationCron} from "./cron/expiredPendingVerification.prisma.job";
+
+import { makeExecutableSchema } from '@graphql-tools/schema';
+import { WebSocketServer } from 'ws';
+import { useServer } from 'graphql-ws/use/ws';
+import { ApolloServerPluginDrainHttpServer } from '@apollo/server/plugin/drainHttpServer';
+import { prisma } from "./graphql/context";
+import jwt from 'jsonwebtoken';
 
 const app = express()
 const httpServer = http.createServer(app)   // HTTP Server for Socket.io
@@ -94,11 +101,99 @@ const start = async () => {
     try {
         await connect()
 
-        // ─── APOLLO SERVER ENTEGRASYONU (YENİ) ───────────
+        // ─── APOLLO SERVER ENTEGRASYONU ───────────
+        const schema = makeExecutableSchema({ typeDefs, resolvers });
+
+        // 2. WebSocket Sunucusunu Oluştur
+        // httpServer'ı dinleyerek '/graphql' yoluna gelen WebSocket isteklerini yakalayacak
+        const wsServer = new WebSocketServer({
+            server: httpServer,
+            path: '/graphql',
+        });
+
+        // 3. graphql-ws kütüphanesini WebSocket sunucumuza bağlıyoruz
+        // const serverCleanup = useServer({ schema }, wsServer);
+
+        const serverCleanup = useServer({
+            schema,
+            context: async (ctx, msg, args) => {
+                // 1. Frontend (Apollo Client) üzerinden gelme ihtimali (Connection Params)
+                const paramAuth = ctx.connectionParams?.Authorization as string | undefined;
+
+                // 2. Postman (HTTP Headers veya Authorization sekmesi) üzerinden gelme ihtimali
+                const headerAuth = ctx.extra.request.headers.authorization;
+
+                // Hangisi doluysa onu kullan (İkisi de varsa paramAuth öncelikli)
+                const authHeader = paramAuth || headerAuth;
+
+                console.log("=== WEBSOCKET TOKEN KONTROLÜ ===");
+                console.log("1. Connection Params'tan gelen:", paramAuth ? "VAR" : "YOK");
+                console.log("2. HTTP Headers'tan gelen:", headerAuth ? "VAR" : "YOK");
+
+                let userId = null;
+                let tokenType = null;
+                let user = null;
+                const clientIp = "WebSocket";
+
+                if (authHeader && authHeader.startsWith("Bearer ")) {
+                    try {
+                        const token = authHeader.split(" ")[1];
+
+                        // Şifresiz okuma
+                        const decodedUnverified = jwt.decode(token) as any;
+
+                        if (decodedUnverified && decodedUnverified.userId) {
+                            // Doğru gizli anahtarı seç (Env değişkenlerini geri ekledim)
+                            const secret = decodedUnverified.type === "temp"
+                                ? (process.env.JWT_TEMP_SECRET || "yedek_temp_gizli_anahtar")
+                                : (process.env.JWT_SECRET || "yedek_access_gizli_anahtar");
+
+                            // Resmen onayla
+                            const decoded = jwt.verify(token, secret) as any;
+
+                            userId = decoded.userId;
+                            tokenType = decoded.type as "access" | "temp";
+
+                            console.log("✅ Başarılı! Çözülen User ID:", userId);
+
+                            user = await prisma.user.findUnique({
+                                where: { id: userId }
+                            });
+                        }
+                    } catch (error: any) {
+                        console.error("❌ [WebSocket Auth] Token hatası:", error.message);
+                    }
+                } else {
+                    console.log("⚠️ Token formata uymuyor veya hiç gönderilmedi.");
+                }
+
+                return {
+                    prisma,
+                    userId,
+                    tokenType,
+                    user,
+                    clientIp
+                };
+            }
+        }, wsServer);
+
+        // 4. Apollo Server Entegrasyonu
         const apolloServer = new ApolloServer<GraphQLContext>({
-            typeDefs,
-            resolvers
-                // : resolvers as any
+            schema,
+            plugins: [
+                // HTTP sunucusunu güvenli kapatmak için
+                ApolloServerPluginDrainHttpServer({ httpServer }),
+                // WebSocket sunucusunu güvenli kapatmak için
+                {
+                    async serverWillStart() {
+                        return {
+                            async drainServer() {
+                                await serverCleanup.dispose();
+                            },
+                        };
+                    },
+                },
+            ],
         });
 
         await apolloServer.start();

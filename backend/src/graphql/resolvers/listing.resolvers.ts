@@ -173,7 +173,7 @@
         Mutation: {
             // ─── CREATE ────────────────────────────────────────────────────────
             createListing: async (_parent: any, args: { input: any }, context: GraphQLContext) => {
-                checkAuth(context);
+                checkAuth(context); //TODO SADECE ÖĞRENCİLER
 
                 const parsed = createListingSchema.safeParse(args.input);
                 if (!parsed.success) {

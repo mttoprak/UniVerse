@@ -4,6 +4,8 @@ import { z } from "zod";
 import { signTempToken, signAccessToken } from "../../utils/token.utils";
 import { localRegisterSchema, loginSchema } from "../../validators/auth.validator";
 import { createActivityLog } from "../../utils/logger.util";
+import {studentOnly} from "../../middleware/middleware";
+import {checkAuth} from "../guards";
 
 
 const generateCode = (): string => Math.floor(100000 + Math.random() * 900000).toString();
@@ -170,10 +172,15 @@ export const authResolvers = {
             }
 
             // Edu email kontrolü
-            if (edu_email) {
-                const existingEduEmail = await context.prisma.user.findUnique({ where: { edu_email } });
-                if (existingEduEmail) throw new Error("This edu email already in use");
-                updateData.edu_email = edu_email;
+            if (context.user.account_type=="student"){
+                if (edu_email) {
+                    const existingEduEmail = await context.prisma.user.findUnique({ where: { edu_email } });
+                    if (existingEduEmail) throw new Error("This edu email already in use");
+                    updateData.edu_email = edu_email;
+                }
+                else{
+                    throw new Error("Öğrenci hesabında Edu Mail gereklidir.");
+                }
             }
 
             if (university) updateData.university = university;
