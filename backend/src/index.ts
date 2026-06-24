@@ -28,9 +28,9 @@ import listingRouter from "./routes/listing.router";
 import commendRouter from "./routes/commend.router";
 import messageRouter from "./routes/message.router";
 import offerRouter from "./routes/offer.router";
-import { startExpiredListingsCron } from "./cron/expiredListings.job";
+import { startExpiredListingsCron } from "./cron/expiredListings.prisma.job";
 import { initSocket } from "./Socket/Socket";
-import { startMessageEmailCron } from "./cron/sendMessageEmail.job";
+import { startMessageEmailCron } from "./cron/sendMessageEmail.prisma.job";
 import { ipResolver, globalLimiter } from "./middleware/middleware";
 import adminRouter from "./routes/admin.router";
 
@@ -207,9 +207,15 @@ const start = async () => {
         initSocket(httpServer)
 
         // Zamanlanmış görevleri başlat
+        // startExpiredListingsCron();
+
         startExpiredListingsCron();
 
-        startMessageEmailCron();
+        // startMessageEmailCron();
+
+        startMessageEmailCron();// Prisma Cron4
+
+        // startPendingVerificationCron();
 
         startPendingVerificationCron(); //Prisma Cron
 

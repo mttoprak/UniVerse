@@ -24,14 +24,13 @@ type User {
     rating_sum: Int!
     rating_count: Int!
 
-    # Mongoose'daki Map/Mixed alanın SQL JSONB karşılığı
     saved_listings: JSON
 
     # ── İlişkiler (Relationships) ──
-    listings: [Listing!]!         # Kullanıcının kendi açtığı ilanlar
-    favoriteListings: [Listing!]! # Favoriye eklediği ilanlar
-    favoriteSellers: [User!]!     # Takip ettiği satıcılar
-    favoritedBy: [User!]!         # Bu kullanıcıyı favorileyen diğer kullanıcılar
+    listings: [Listing!]!
+    favoriteListings: [Listing!]!
+    favoriteSellers: [User!]!
+    favoritedBy: [User!]!
 
     createdAt: String!
     updatedAt: String!
@@ -47,49 +46,78 @@ enum AuthProvider {
     google
 }
 
-  type PublicProfileResponse {
+type PublicProfileResponse {
     user: User!
     listing_count: Int!
-  }
+}
 
-#  type VerificationResponse {
-#    success: Boolean!
-#    message: String!
-#  }
+type ToggleFavoriteResponse {
+    favorited: Boolean!
+}
 
-  input UpdateUserInput {
+type SavedListResponse {
+    saved: Boolean
+    removed: Boolean
+    listName: String!
+    saved_listings: JSON!
+}
+
+type CloudinarySignatureResponseUser {
+    timestamp: Int!
+    signature: String!
+    cloudName: String!
+    apiKey: String!
+    folder: String!
+}
+
+input UpdateUserInput {
     username: String
     name: String
     surname: String
     password: String
-  }
-
-#input RegisterInput {
-#    email: String!
-#    name: String!
-#    surname: String!
-#    password: String!
-#}
+}
 
 input VerifyEduMailInput {
     code: String!
 }
 
-  # Sadece User ile ilgili GET işlemleri
-  type Query {
+input AddToSavedInput {
+    listingId: ID!
+    listName: String!
+}
+
+input RemoveFromSavedInput {
+    listingId: ID!
+    listName: String!
+}
+
+input ChangePasswordInput {
+    oldPassword: String
+    newPassword: String!
+}
+
+type Query {
     getMe: User
     getPublicProfile(id: ID!): PublicProfileResponse!
-  }
+    getPublicProfileByUsername(username: String!): PublicProfileResponse!
+    getFavoriteListings: [Listing!]!
+    getSavedListings: JSON!
+}
 
-  # Sadece User ile ilgili POST/PATCH işlemleri
-  type Mutation {
-#    sendVerification(email: String!): VerificationResponse!
+type Mutation {
     updateUser(input: UpdateUserInput!): User!
+    changePassword(input: ChangePasswordInput!): String!
 
-      # sendEduVerification için input argümanına gerek yok, çünkü email zaten context'teki user'dan alınıyor
-      sendEduVerification: String!
+    # YENİ EKLENDİ: Profil Fotoğrafı Güncelleme
+    updateProfilePhoto(photoUrl: String!): String!
 
-      # Kod doğrulaması için input alıyoruz
-      verifyEduMail(input: VerifyEduMailInput!): String!
-  }
+    sendEduVerification: String!
+    verifyEduMail(input: VerifyEduMailInput!): String!
+
+    toggleFavorite(listingId: ID!): ToggleFavoriteResponse!
+    addToSaved(input: AddToSavedInput!): SavedListResponse!
+    removeFromSaved(input: RemoveFromSavedInput!): SavedListResponse!
+
+    generateUploadSignatureUser(folderName: String!): CloudinarySignatureResponseUser!
+}
 `;

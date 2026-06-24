@@ -43,6 +43,7 @@ type Message {
     type: String!
     text: String
     photos: [String!]!
+    location: String
 
     isRead: Boolean!
     readAt: String
@@ -119,6 +120,7 @@ input SendMessageInput {
     listingId: ID
     text: String
     photos: [String!] # Frontend cloudinary'e yükleyip URL'leri buraya verecek
+    location: String
     offerPrice: Float
     offerPricePer: String
     offerNote: String

@@ -4,6 +4,7 @@ import { pubsub, SUBSCRIPTION_EVENTS } from "../../utils/pubsub.util";
 import { withFilter } from 'graphql-subscriptions';
 import cloudinary from "../../utils/cloudinary/cloudinary.config";
 import { createActivityLog } from "../../utils/logger.util";
+import {sendMessageSchema} from "../../validators/message.validator.prisma";
 
 export const messagingResolvers = {
     Query: {
@@ -165,7 +166,28 @@ export const messagingResolvers = {
         // ─── SEND MESSAGE ───
         sendMessage: async (_parent: any, { input }: any, context: GraphQLContext) => {
             checkAuth(context);
-            const { conversationId, listingId, text, photos, offerPrice, offerPricePer, offerNote } = input;
+            // 1. Zod ile Gelen Veriyi (Input) Doğrula
+            const parsed = sendMessageSchema.safeParse(input);
+
+            if (!parsed.success) {
+                // Zod'un karmaşık hata objesini frontend'in okuyabileceği temiz bir string'e çeviriyoruz
+                const errorMessages = parsed.error.issues.map(issue => issue.message).join(" | ");
+                throw new Error(`Validasyon Hatası: ${errorMessages}`);
+            }
+
+            // 2. Doğrulanmış ve temizlenmiş veriyi kullan
+            // parsed.data içinde Zod'un .transform() fonksiyonundan geçmiş tertemiz veri var
+            const {
+                conversationId,
+                listingId,
+                text,
+                photos,
+                location,
+                offerPrice,
+                offerPricePer,
+                offerNote
+            } = parsed.data;
+
             const currentUserId = context.userId!;
 
             let conversation: any = null;
@@ -198,6 +220,8 @@ export const messagingResolvers = {
                     isNewConversation = true;
                 }
             }
+            if (!conversation) throw new Error("Mesaj gönderilecek sohbet bulunamadı veya oluşturulamadı.");
+            if (!listing) throw new Error("İlgili ilan bulunamadı.");
 
             // --- TEKLİF MANTIĞI ---
             let finalOfferId: string | undefined = undefined;
@@ -232,7 +256,11 @@ export const messagingResolvers = {
 
             // --- MESAJ OLUŞTURMA ---
             const currentUserObj = await context.prisma.user.findUnique({ where: { id: currentUserId } });
-            let preview = text ? text.slice(0, 80) : photos?.length ? `${photos.length} fotoğraf` : finalOfferId ? 'Teklif gönderildi' : 'Yeni Mesaj';
+            let preview = text ? text.slice(0, 80)
+                : photos?.length ? `${photos.length} fotoğraf`
+                : location ? 'Konum paylaşıldı'
+                : finalOfferId ? 'Teklif gönderildi'
+                : 'Yeni Mesaj';
 
             const lastMessagePayload = {
                 senderId: currentUserId,
@@ -258,6 +286,7 @@ export const messagingResolvers = {
                             type: 'user',
                             text,
                             photos: photos || [], // Frontend URL'leri verdi
+                            location,
                             offerId: finalOfferId
                         }
                     }
@@ -268,8 +297,8 @@ export const messagingResolvers = {
             const newMessage = updatedConversation.messages[0];
 
             // --- SOCKET (PUBSUB) YAYINLARI ---
-            pubsub.publish(SUBSCRIPTION_EVENTS.NEW_MESSAGE, { newMessage });
-            pubsub.publish(SUBSCRIPTION_EVENTS.CONVERSATION_UPDATED, { conversationUpdated: updatedConversation });
+            await pubsub.publish(SUBSCRIPTION_EVENTS.NEW_MESSAGE, { newMessage });
+            await pubsub.publish(SUBSCRIPTION_EVENTS.CONVERSATION_UPDATED, { conversationUpdated: updatedConversation });
 
             return newMessage;
         },
