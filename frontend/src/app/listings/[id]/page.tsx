@@ -10,7 +10,6 @@ import {
     ListPlus, Clock, GraduationCap, Bookmark, Folder, Plus, Check, X
 } from 'lucide-react';
 
-// a helper object for translating category types into Turkish
 const TYPE_MAP: Record<string, string> = {
     secondhand: 'İkinci El Satış',
     roommate: 'Ev/Oda Arkadaşı',
@@ -36,6 +35,92 @@ const fixEncodingAndFormat = (text: any) => {
         .join(' ');
 };
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://universe-1-vdkr.onrender.com';
+
+// --- GRAPHQL YARDIMCI FONKSİYONU ---
+async function fetchGraphQL(query: string, variables: any = {}) {
+    const token = localStorage.getItem('accessToken');
+    const response = await fetch(`${API_URL}/graphql`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ query, variables })
+    });
+
+    if (!response.ok) {
+        throw new Error(`API Hatası: ${response.status}`);
+    }
+
+    const result = await response.json();
+    if (result.errors) {
+        throw new Error(result.errors[0].message);
+    }
+    return result.data;
+}
+
+// --- GRAPHQL SORGULARI ---
+// 5 Ayrı REST isteğini TEK bir sorguda birleştirdik!
+const GET_LISTING_PAGE_DATA = `#graphql
+    query GetListingPageData($id: ID!) {
+        getListing(id: $id) {
+            _id: id title description price location type status features criteria photos views save_count is_deleted expires
+            condition category subcategory origin destination departure_date available_seats subject format application_url deadline amount
+            createdAt
+            owner {
+                _id: id username profile_photo account_type is_verified university
+            }
+        }
+        getFavoriteListings {
+            _id: id
+        }
+        getSavedListings
+        getListingComments(listingId: $id, limit: 50) {
+            comments {
+                _id: id content rating createdAt
+                author { username profile_photo }
+            }
+        }
+        checkListingAgreement(listingId: $id) {
+            hasAgreement
+        }
+    }
+`;
+
+const TOGGLE_FAVORITE = `#graphql
+    mutation ToggleFavorite($listingId: ID!) {
+        toggleFavorite(listingId: $listingId) { favorited }
+    }
+`;
+
+const ADD_TO_SAVED = `#graphql
+    mutation AddToSaved($input: AddToSavedInput!) {
+        addToSaved(input: $input) { saved_listings }
+    }
+`;
+
+const REMOVE_FROM_SAVED = `#graphql
+    mutation RemoveFromSaved($input: RemoveFromSavedInput!) {
+        removeFromSaved(input: $input) { saved_listings }
+    }
+`;
+
+const CREATE_COMMENT = `#graphql
+    mutation CreateComment($input: CreateCommentInput!) {
+        createComment(input: $input) {
+            _id: id content rating createdAt
+            author { username profile_photo }
+        }
+    }
+`;
+
+const APPLY_TO_LISTING = `#graphql
+    mutation ApplyToListing($listingId: ID!) {
+        applyToListing(listingId: $listingId) { id }
+    }
+`;
+
 export default function AdDetailPage() {
     const params = useParams();
     const router = useRouter();
@@ -47,9 +132,7 @@ export default function AdDetailPage() {
     const [isFavorite, setIsFavorite] = useState(false);
     const [activeImage, setActiveImage] = useState(0);
 
-    // Yorum yapma izni (Anlaşma durumu)
     const [canComment, setCanComment] = useState(false);
-    // Dış bağlantı yönlendirme modalı
     const [isApplyModalOpen, setIsApplyModalOpen] = useState(false);
     const [isApplying, setIsApplying] = useState(false);
 
@@ -66,10 +149,15 @@ export default function AdDetailPage() {
     const [newListName, setNewListName] = useState('');
     const [saveLoading, setSaveLoading] = useState(false);
 
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://universe-1-vdkr.onrender.com';
+    // Güvenli Tarih Formatlayıcı
+    const parseSafeDate = (dateStr: string | null | undefined): Date | null => {
+        if (!dateStr) return null;
+        const parsedDate = /^\d+$/.test(dateStr) ? new Date(Number(dateStr)) : new Date(dateStr);
+        return !isNaN(parsedDate.getTime()) ? parsedDate : null;
+    };
 
     useEffect(() => {
-        const fetchAdDetailsFavoritesAndComments = async () => {
+        const fetchAllData = async () => {
             if (!id) return;
             try {
                 setIsLoading(true);
@@ -81,73 +169,31 @@ export default function AdDetailPage() {
                     return;
                 }
 
-                // 1. İlan Detaylarını Çek
-                const adResponse = await fetch(`${API_URL}/api/listing/${id}`, {
-                    method: 'GET',
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
+                // Tek bir GraphQL isteği ile tüm sayfanın verisini çekiyoruz
+                const data = await fetchGraphQL(GET_LISTING_PAGE_DATA, { id });
 
-                if (!adResponse.ok) {
-                    const errData = await adResponse.json().catch(() => ({}));
-                    throw new Error(errData.message || 'İlan bulunamadı.');
-                }
-                const adData = await adResponse.json();
+                if (!data.getListing) throw new Error("İlan bulunamadı.");
 
-                // Eğer yanlışlıkla bir acil ilan bu sayfada açılmaya çalışılırsa onu emergencies sayfasına yönlendirebilirsin (Opsiyonel Güvenlik)
-                if (adData.listing?.type === 'urgent') {
+                // Acil ilan güvenlik yönlendirmesi
+                if (data.getListing.type === 'urgent') {
                     router.replace(`/emergencies/${id}`);
                     return;
                 }
 
-                setAd(adData.listing || adData.data || adData);
+                setAd(data.getListing);
 
-                // 2. Favori Durumunu Kontrol Et
-                try {
-                    const favResponse = await fetch(`${API_URL}/api/user/me/favorites`, {
-                        method: 'GET',
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    if (favResponse.ok) {
-                        const favData = await favResponse.json();
-                        const favoritesArray = favData.listings || favData || [];
-                        setIsFavorite(favoritesArray.some((fav: any) => fav._id === id));
-                    }
-                } catch (favErr) { console.warn(favErr); }
+                // Favoriler
+                const favoritesArray = data.getFavoriteListings || [];
+                setIsFavorite(favoritesArray.some((fav: any) => fav._id === id));
 
-                // 3. Yorumları Çek
-                try {
-                    const commentsRes = await fetch(`${API_URL}/api/comment/listing/${id}`, {
-                        method: 'GET',
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    if (commentsRes.ok) {
-                        const commentsData = await commentsRes.json();
-                        setComments(commentsData.comments || commentsData || []);
-                    }
-                } catch (commentErr) { console.warn(commentErr); }
+                // Koleksiyonlar
+                setUserSavedLists(data.getSavedListings || {});
 
-                // 4. Anlaşma Durumunu Çek (Yorum Yapabilme İzni)
-                try {
-                    const agreementRes = await fetch(`${API_URL}/api/offer/check-agreement/${id}`, {
-                        method: 'GET',
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    if (agreementRes.ok) {
-                        const agreementData = await agreementRes.json();
-                        setCanComment(agreementData.hasAgreement);
-                    }
-                } catch (agreementErr) { console.warn(agreementErr); }
+                // Yorumlar
+                setComments(data.getListingComments?.comments || []);
 
-                try {
-                    const savedRes = await fetch(`${API_URL}/api/user/me/saved`, {
-                        method: 'GET',
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    if (savedRes.ok) {
-                        const savedData = await savedRes.json();
-                        setUserSavedLists(savedData.saved_listings || {});
-                    }
-                } catch (savedErr) { console.warn(savedErr); }
+                // Anlaşma Durumu (Yorum yetkisi)
+                setCanComment(data.checkListingAgreement?.hasAgreement || false);
 
             } catch (err: any) {
                 console.warn(err);
@@ -157,8 +203,8 @@ export default function AdDetailPage() {
             }
         };
 
-        fetchAdDetailsFavoritesAndComments();
-    }, [id, router, API_URL]);
+        fetchAllData();
+    }, [id, router]);
 
     const handlePrimaryAction = () => {
         const token = localStorage.getItem('accessToken');
@@ -167,56 +213,44 @@ export default function AdDetailPage() {
             return;
         }
 
-        // Burs ve İş İlanları için dış bağlantı yönlendirmesi
         if (ad.type === 'job' || ad.type === 'scholarship') {
             if (ad.application_url) {
-                // Tarayıcı alerti yerine kendi modalımızı açıyoruz
                 setIsApplyModalOpen(true);
             } else {
                 alert("Bu ilan için başvuru linki bulunmamaktadır. Lütfen mesaj yoluyla iletişime geçin.");
                 router.push(`/messages?listingId=${id}`);
             }
-        }
-        // Diğer ilan tipleri için mesajlaşma
-        else {
+        } else {
             router.push(`/messages?listingId=${id}`);
         }
     };
 
     const handleToggleFavorite = async () => {
-        const token = localStorage.getItem('accessToken');
-        if (!token) return;
-
         const previousState = isFavorite;
         setIsFavorite(!isFavorite);
-
         try {
-            const response = await fetch(`${API_URL}/api/user/me/favorites/${id}`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-            });
-            if (!response.ok) setIsFavorite(previousState);
-        } catch (error) { setIsFavorite(previousState); }
+            await fetchGraphQL(TOGGLE_FAVORITE, { listingId: id });
+        } catch (error) {
+            setIsFavorite(previousState);
+        }
     };
 
     const handleToggleSaveList = async (listName: string) => {
-        const token = localStorage.getItem('accessToken');
-        if (!token) return;
-
         setSaveLoading(true);
         try {
-            const response = await fetch(`${API_URL}/api/user/me/saved`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ listingId: id, listName })
+            const isSavedHere = userSavedLists[listName]?.some((item: any) => item._id === id);
+
+            // Koleksiyonda varsa çıkar, yoksa ekle
+            const mutationToCall = isSavedHere ? REMOVE_FROM_SAVED : ADD_TO_SAVED;
+            const data = await fetchGraphQL(mutationToCall, {
+                input: { listingId: id, listName }
             });
-            const data = await response.json();
-            if (response.ok) {
-                setUserSavedLists(data.saved_listings);
-                setNewListName(''); // input'u temizle
-            }
+
+            const updatedLists = isSavedHere ? data.removeFromSaved.saved_listings : data.addToSaved.saved_listings;
+            setUserSavedLists(updatedLists || {});
+            setNewListName('');
         } catch (error) {
-            console.error(error);
+            console.log(error);
         } finally {
             setSaveLoading(false);
         }
@@ -228,63 +262,45 @@ export default function AdDetailPage() {
         if (newComment.trim().length < 2) return setCommentError("Yorumunuz çok kısa.");
 
         setCommentLoading(true); setCommentError(null); setCommentSuccess(null);
-        const token = localStorage.getItem('accessToken');
-        const sellerTargetId = ad.owner?._id || ad.owner || ad.seller?._id;
 
         try {
-            const response = await fetch(`${API_URL}/api/comment/`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ listing: id, target: sellerTargetId, content: newComment, rating: rating })
+            const data = await fetchGraphQL(CREATE_COMMENT, {
+                input: {
+                    listingId: id,
+                    content: newComment,
+                    rating: rating
+                }
             });
-
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.message || data.error || 'Yorum gönderilemedi.');
 
             setCommentSuccess("Değerlendirmeniz başarıyla gönderildi!");
             setNewComment(''); setRating(0);
-            if (data.comment || data) setComments(prev => [data.comment || data, ...prev]);
+
+            if (data.createComment) {
+                setComments(prev => [data.createComment, ...prev]);
+            }
+
             setTimeout(() => setCommentSuccess(null), 3000);
         } catch (err: any) {
-            setCommentError(err.message);
+            setCommentError(err.message || 'Yorum gönderilemedi.');
         } finally {
             setCommentLoading(false);
         }
     };
 
-    // Başvuruyu sisteme kaydedip linke yönlendiren fonksiyon
     const handleTrackedApplication = async () => {
-        const token = localStorage.getItem('accessToken');
-        if (!token) {
-            alert("Başvuru yapabilmek için giriş yapmalısınız.");
-            return;
-        }
-
         setIsApplying(true);
         try {
-            const response = await fetch(`${API_URL}/api/offer/apply`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ listingId: ad._id })
-            });
-
-            const data = await response.json();
-
-            // Eğer 409 (Zaten başvurdunuz) hatası dönerse, engelleme, sadece linke gitmesine izin ver.
-            // Diğer hatalarda uyarı ver.
-            if (!response.ok && response.status !== 409) {
-                throw new Error(data.error || 'Başvuru kaydedilemedi.');
-            }
-
-            // Başarılıysa (veya zaten başvurulmuşsa) modalı kapat ve linki aç
+            await fetchGraphQL(APPLY_TO_LISTING, { listingId: ad._id });
             setIsApplyModalOpen(false);
             window.open(ad.application_url, '_blank', 'noopener,noreferrer');
-
         } catch (error: any) {
-            alert(error.message);
+            // Eğer backend "Zaten başvurdunuz" hatası dönüyorsa, linki açmasına yine de izin veriyoruz.
+            if (error.message.toLowerCase().includes('already') || error.message.toLowerCase().includes('zaten')) {
+                setIsApplyModalOpen(false);
+                window.open(ad.application_url, '_blank', 'noopener,noreferrer');
+            } else {
+                alert(error.message);
+            }
         } finally {
             setIsApplying(false);
         }
@@ -304,7 +320,6 @@ export default function AdDetailPage() {
     const displayImages = ad.photos && ad.photos.length > 0 ? ad.photos : ["https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&q=80"];
     const seller = ad.owner || ad.seller;
 
-    // helper components
     const renderDynamicRecord = (title: string, Icon: any, record: Record<string, string>, colorTheme: 'teal' | 'violet') => {
         if (!record || Object.keys(record).length === 0) return null;
         return (
@@ -335,7 +350,7 @@ export default function AdDetailPage() {
                         <div className="grid grid-cols-2 gap-6">
                             <div><span className="text-xs text-gray-500 uppercase block mb-1">Nereden</span><span className="text-white font-bold">{fixEncodingAndFormat(ad.origin)}</span></div>
                             <div><span className="text-xs text-gray-500 uppercase block mb-1">Nereye</span><span className="text-white font-bold">{fixEncodingAndFormat(ad.destination)}</span></div>
-                            <div><span className="text-xs text-gray-500 uppercase block mb-1">Kalkış Tarihi</span><span className="text-white font-bold">{new Date(ad.departure_date).toLocaleString('tr-TR')}</span></div>
+                            <div><span className="text-xs text-gray-500 uppercase block mb-1">Kalkış Tarihi</span><span className="text-white font-bold">{ad.departure_date ? new Date(Number(ad.departure_date) || ad.departure_date).toLocaleString('tr-TR') : '-'}</span></div>
                             <div><span className="text-xs text-gray-500 uppercase block mb-1">Boş Koltuk</span><span className="text-white font-bold">{ad.available_seats} Kişi</span></div>
                         </div>
                     </div>
@@ -364,7 +379,7 @@ export default function AdDetailPage() {
                                 <div><span className="text-xs text-gray-500 uppercase block mb-1">Miktar</span><span className="text-white font-bold">{ad.amount} ₺</span></div>
                             )}
                             {ad.deadline && (
-                                <div><span className="text-xs text-gray-500 uppercase block mb-1">Son Başvuru</span><span className="text-white font-bold">{new Date(ad.deadline).toLocaleDateString('tr-TR')}</span></div>
+                                <div><span className="text-xs text-gray-500 uppercase block mb-1">Son Başvuru</span><span className="text-white font-bold">{new Date(Number(ad.deadline) || ad.deadline).toLocaleDateString('tr-TR')}</span></div>
                             )}
                             {ad.application_url && (
                                 <div className="col-span-2">
@@ -403,8 +418,6 @@ export default function AdDetailPage() {
 
     return (
         <div className="min-h-screen pt-28 pb-12 px-4 relative">
-
-            {/* Dış Bağlantı ve Başvuru Takip Modalı */}
             {isApplyModalOpen && (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
                     <div className="bg-[#0B0F19] border border-cyan-500/30 rounded-3xl p-6 md:p-8 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
@@ -419,7 +432,6 @@ export default function AdDetailPage() {
                         </p>
 
                         <div className="flex flex-col gap-3">
-                            {/* SEÇENEK 1: SİSTEME KAYDET VE LİNKE GİT */}
                             <button
                                 onClick={handleTrackedApplication}
                                 disabled={isApplying}
@@ -427,8 +439,6 @@ export default function AdDetailPage() {
                             >
                                 {isApplying ? <Loader2 size={18} className="animate-spin" /> : 'Sisteme Kaydet ve Linke Git'}
                             </button>
-
-                            {/* SEÇENEK 2: SADECE LİNKE GİT */}
                             <button
                                 onClick={() => {
                                     setIsApplyModalOpen(false);
@@ -439,8 +449,6 @@ export default function AdDetailPage() {
                             >
                                 Sadece Linke Git (Kaydetme)
                             </button>
-
-                            {/* SEÇENEK 3: İPTAL */}
                             <button
                                 onClick={() => setIsApplyModalOpen(false)}
                                 disabled={isApplying}
@@ -453,7 +461,6 @@ export default function AdDetailPage() {
                 </div>
             )}
 
-            {/* KAYDET (KOLEKSİYON) MODALI */}
             {isSaveModalOpen && (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
                     <div className="bg-[#0B0F19] border border-blue-500/30 rounded-3xl w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col max-h-[80vh]">
@@ -548,10 +555,7 @@ export default function AdDetailPage() {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    {/* left area */}
                     <div className="lg:col-span-2 space-y-8">
-
-                        {/* images */}
                         <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-3xl overflow-hidden p-2">
                             <div className="aspect-[4/3] w-full rounded-2xl overflow-hidden bg-[#0B0F19] relative group flex items-center justify-center">
                                 <img src={displayImages[activeImage]} alt={ad.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
@@ -568,7 +572,6 @@ export default function AdDetailPage() {
                             )}
                         </div>
 
-                        {/* description */}
                         <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-[0_10px_30px_rgba(0,0,0,0.2)]">
                             <h3 className="text-xl font-black text-white uppercase tracking-tight flex items-center space-x-2 mb-6">
                                 <Info size={20} className="text-cyan-500" />
@@ -577,14 +580,11 @@ export default function AdDetailPage() {
                             <p className="text-gray-300 leading-relaxed text-sm whitespace-pre-wrap">{ad.description}</p>
                         </div>
 
-                        {/* category-specific card*/}
                         {renderCategorySpecificDetails()}
 
-                        {/* dynamic record cards */}
                         {!(ad.type === 'secondhand' || ad.type === 'roommate') && renderDynamicRecord('Fiziksel Özellikler', Tag, ad.features, 'teal')}
                         {renderDynamicRecord('Kriterler / Beklentiler', ListPlus, ad.criteria, 'violet')}
 
-                        {/* commemts */}
                         <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-[0_10px_30px_rgba(0,0,0,0.2)]">
                             <h3 className="text-xl font-black text-white uppercase tracking-tight flex items-center space-x-2 mb-6 border-b border-white/10 pb-4">
                                 <MessageSquare size={20} className="text-emerald-500" />
@@ -628,32 +628,34 @@ export default function AdDetailPage() {
                                 {comments.length === 0 ? (
                                     <p className="text-gray-500 text-sm text-center py-4 italic">Henüz değerlendirme yapılmamış.</p>
                                 ) : (
-                                    comments.map((comment: any) => (
-                                        <div key={comment._id} className="bg-white/5 border border-white/5 rounded-2xl p-5 hover:bg-white/10 transition-colors">
-                                            <div className="flex items-start justify-between mb-2">
-                                                <div className="flex items-center space-x-3">
-                                                    <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold uppercase overflow-hidden border border-emerald-500/30">
-                                                        {comment.author?.profile_photo ? <img src={comment.author.profile_photo} alt="" className="w-full h-full object-cover" /> : comment.author?.username?.substring(0, 2) || "U"}
+                                    comments.map((comment: any) => {
+                                        const cDate = parseSafeDate(comment.createdAt);
+                                        return (
+                                            <div key={comment._id} className="bg-white/5 border border-white/5 rounded-2xl p-5 hover:bg-white/10 transition-colors">
+                                                <div className="flex items-start justify-between mb-2">
+                                                    <div className="flex items-center space-x-3">
+                                                        <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold uppercase overflow-hidden border border-emerald-500/30">
+                                                            {comment.author?.profile_photo ? <img src={comment.author.profile_photo} alt="" className="w-full h-full object-cover" /> : comment.author?.username?.substring(0, 2) || "U"}
+                                                        </div>
+                                                        <div>
+                                                            <h4 className="text-white text-sm font-bold">@{comment.author?.username || 'Kullanıcı'}</h4>
+                                                            <span className="text-xs text-gray-500">{cDate ? cDate.toLocaleDateString('tr-TR') : ''}</span>
+                                                        </div>
                                                     </div>
-                                                    <div>
-                                                        <h4 className="text-white text-sm font-bold">@{comment.author?.username || 'Kullanıcı'}</h4>
-                                                        <span className="text-xs text-gray-500">{new Date(comment.createdAt).toLocaleDateString('tr-TR')}</span>
+                                                    <div className="flex items-center bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-500/20">
+                                                        <Star size={12} className="fill-amber-400 text-amber-400 mr-1" />
+                                                        <span className="text-amber-400 text-xs font-bold">{comment.rating || 5}.0</span>
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-500/20">
-                                                    <Star size={12} className="fill-amber-400 text-amber-400 mr-1" />
-                                                    <span className="text-amber-400 text-xs font-bold">{comment.rating || 5}.0</span>
-                                                </div>
+                                                <p className="text-gray-300 text-sm mt-3 ml-13 whitespace-pre-wrap pl-13">{comment.content}</p>
                                             </div>
-                                            <p className="text-gray-300 text-sm mt-3 ml-13 whitespace-pre-wrap pl-13">{comment.content}</p>
-                                        </div>
-                                    ))
+                                        )
+                                    })
                                 )}
                             </div>
                         </div>
                     </div>
 
-                    {/* sticky info */}
                     <div className="space-y-6">
                         <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-[0_10px_30px_rgba(0,0,0,0.2)] sticky top-28">
                             <div className="mb-6">
@@ -681,19 +683,18 @@ export default function AdDetailPage() {
                                 </div>
                                 <div className="flex items-center text-sm text-gray-400">
                                     <Calendar size={16} className="mr-3 text-cyan-500" />
-                                    <span className="font-medium">İlan Tarihi: {ad.createdAt ? new Date(ad.createdAt).toLocaleDateString('tr-TR') : 'Tarih Yok'}</span>
+                                    <span className="font-medium">İlan Tarihi: {ad.createdAt ? (parseSafeDate(ad.createdAt)?.toLocaleDateString('tr-TR') || 'Tarih Yok') : 'Tarih Yok'}</span>
                                 </div>
                                 {ad.expires && (
                                     <div className="flex items-center text-sm text-amber-400/80">
                                         <Clock size={16} className="mr-3 text-amber-500" />
                                         <span className="font-medium">
-                                            Geçerlilik: {new Date(ad.expires).toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                            Geçerlilik: {parseSafeDate(ad.expires)?.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' }) || ''}
                                         </span>
                                     </div>
                                 )}
                             </div>
 
-                            {/* features area */}
                             {(ad.type === 'secondhand' || ad.type === 'roommate') && ad.features && Object.keys(ad.features).length > 0 && (
                                 <div className="mb-6 pt-6 border-t border-white/10">
                                     <h4 className="flex items-center text-white text-sm font-bold uppercase tracking-widest mb-4">
@@ -716,7 +717,7 @@ export default function AdDetailPage() {
 
                             {seller && (
                                 <div
-                                    onClick={() => router.push(`/users/${id}`)}
+                                    onClick={() => router.push(`/users/${seller._id || seller.id}`)}
                                     className="bg-white/5 border border-white/10 rounded-2xl p-4 mb-6 flex items-center space-x-4 cursor-pointer hover:bg-white/10 hover:border-cyan-500/50 transition-all group"
                                 >
                                     <div className="w-12 h-12 rounded-full overflow-hidden bg-cyan-500/20 border border-cyan-500/50 flex items-center justify-center flex-shrink-0">
@@ -730,23 +731,19 @@ export default function AdDetailPage() {
                                         <div className="flex items-center space-x-2">
                                             <h4 className="text-white font-bold text-sm group-hover:text-cyan-400 transition-colors">@{seller.username || 'Kullanıcı'}</h4>
 
-                                            {/* Dinamik Kullanıcı Rozetleri */}
                                             {seller.account_type === 'student' ? (
                                                 seller.is_verified ? (
                                                     <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 text-[10px] font-black uppercase tracking-wider border border-blue-500/30">
-                                                        <GraduationCap size={12} />
-                                                        Onaylı Öğrenci
+                                                        <GraduationCap size={12} /> Onaylı Öğrenci
                                                     </span>
                                                 ) : (
                                                     <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-300 text-[10px] font-black uppercase tracking-wider border border-blue-500/20">
-                                                        <GraduationCap size={12} />
-                                                        Öğrenci (Onaysız)
+                                                        <GraduationCap size={12} /> Öğrenci (Onaysız)
                                                     </span>
                                                 )
                                             ) : (
                                                 <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-500/20 text-gray-400 text-[10px] font-black uppercase tracking-wider border border-gray-500/30">
-                                                    <User size={12} />
-                                                    Sivil
+                                                    <User size={12} /> Sivil
                                                 </span>
                                             )}
                                         </div>

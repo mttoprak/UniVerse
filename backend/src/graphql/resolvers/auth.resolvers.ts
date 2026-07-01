@@ -6,6 +6,7 @@ import { localRegisterSchema, loginSchema } from "../../validators/auth.validato
 import { createActivityLog } from "../../utils/logger.util";
 import {studentOnly} from "../../middleware/middleware";
 import {checkAuth} from "../guards";
+import {sendPasswordResetEmail, sendVerificationEmail} from "../../utils/mail.utils";
 
 
 const generateCode = (): string => Math.floor(100000 + Math.random() * 900000).toString();
@@ -27,8 +28,7 @@ export const authResolvers = {
                 create: { email, code: hashedCode, expires },
             });
 
-            // TODO: Buraya senin e-posta gönderme fonksiyonun eklenecek
-            // sendVerificationEmail(email, code);
+            await sendVerificationEmail(email, code);
 
             // Geliştirme ortamı (Logda görelim diye)
             console.log(`[DEV] Verification code for ${email}: ${code}`);
@@ -241,7 +241,7 @@ export const authResolvers = {
 
                 //TODO: Password Reset Email
 
-                // sendPasswordResetEmail(user.email, code);
+                await sendPasswordResetEmail(user.email, code);
 
                 if (process.env.DEVPROCESS === "true") {
 

@@ -2,7 +2,54 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { GraduationCap, Mail, KeyRound, Loader2, AlertCircle, ArrowLeft, CheckCircle, ShieldCheck } from 'lucide-react';
+import { GraduationCap, Mail, KeyRound, Loader2, AlertCircle, ArrowLeft, CheckCircle } from 'lucide-react';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
+// --- GRAPHQL YARDIMCI FONKSİYONU ---
+async function fetchGraphQL(query: string, variables: any = {}) {
+    const token = localStorage.getItem('accessToken');
+    const response = await fetch(`${API_URL}/graphql`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ query, variables })
+    });
+
+    if (!response.ok) {
+        throw new Error(`API Hatası: ${response.status}`);
+    }
+
+    const result = await response.json();
+    if (result.errors && result.errors.length > 0) {
+        throw new Error(result.errors[0].message);
+    }
+    return result.data;
+}
+
+// --- GRAPHQL SORGULARI VE MUTASYONLARI ---
+const GET_ME_FOR_VERIFICATION = `#graphql
+query GetMeForVerification {
+    getMe {
+        is_verified
+        edu_email
+    }
+}
+`;
+
+const SEND_EDU_VERIFICATION = `#graphql
+mutation SendEduVerification {
+    sendEduVerification
+}
+`;
+
+const VERIFY_EDU_MAIL = `#graphql
+mutation VerifyEduMail($input: VerifyEduMailInput!) {
+    verifyEduMail(input: $input)
+}
+`;
 
 export default function VerifyEduPage() {
     const router = useRouter();
@@ -16,33 +63,27 @@ export default function VerifyEduPage() {
     const [eduEmail, setEduEmail] = useState('');
     const [code, setCode] = useState('');
 
-    const API_URL = process.env.NEXT_PUBLIC_API_URL;
-
-    // pull the users edu_mail address when the page opens
+    // Sayfa açıldığında kullanıcı verisini GraphQL üzerinden çek
     useEffect(() => {
         const fetchUserData = async () => {
-            const token = localStorage.getItem('accessToken');
-            if (!token) {
+            if (!localStorage.getItem('accessToken')) {
                 router.push('/login');
                 return;
             }
 
             try {
-                const res = await fetch(`${API_URL}/api/auth/me`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const data = await res.json();
-                if (res.ok) {
-                    const user = data.user || data;
-                    if (user.is_verified) {
-                        router.push('/profile'); // if already verified push to profile
+                const data = await fetchGraphQL(GET_ME_FOR_VERIFICATION);
+
+                if (data.getMe) {
+                    if (data.getMe.is_verified) {
+                        router.push('/profile'); // Zaten onaylıysa profile yönlendir
                     }
-                    if (user.edu_email) {
-                        setEduEmail(user.edu_email);
+                    if (data.getMe.edu_email) {
+                        setEduEmail(data.getMe.edu_email);
                     }
                 }
             } catch (err) {
-                console.error("Kullanıcı verisi çekilemedi.");
+                console.log("Kullanıcı verisi çekilemedi:", err);
             } finally {
                 setPageLoading(false);
             }
@@ -51,23 +92,18 @@ export default function VerifyEduPage() {
         fetchUserData();
     }, [router]);
 
-    // 1. send code
+    // 1. Kod Gönder
     const handleSendCode = async () => {
         setIsLoading(true);
         setError(null);
-        const token = localStorage.getItem('accessToken');
 
         try {
-            const response = await fetch(`${API_URL}/api/user/sendEduVerification`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.message || 'Kod gönderilemedi.');
+            const data = await fetchGraphQL(SEND_EDU_VERIFICATION);
 
             setStep(2); // Başarılıysa 2. adıma (kod girme ekranına) geç
-            setSuccessMessage('Doğrulama kodu .edu.tr adresine gönderildi!');
+
+            // Backend'den dönen String mesajı gösterebilir veya statik mesaj kullanabilirsin
+            setSuccessMessage(data.sendEduVerification || 'Doğrulama kodu .edu.tr adresine gönderildi!');
 
             // 3 saniye sonra mesajı gizle
             setTimeout(() => setSuccessMessage(null), 3000);
@@ -78,7 +114,7 @@ export default function VerifyEduPage() {
         }
     };
 
-    // 2. verify code
+    // 2. Kodu Doğrula
     const handleVerify = async () => {
         if (code.length !== 6) {
             setError("Kod 6 haneli olmalıdır.");
@@ -87,25 +123,14 @@ export default function VerifyEduPage() {
 
         setIsLoading(true);
         setError(null);
-        const token = localStorage.getItem('accessToken');
 
         try {
-            const response = await fetch(`${API_URL}/api/user/verifyEduMail`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    edu_email: eduEmail,
-                    code: code
-                })
+            // GraphQL Typedefs'e göre VerifyEduMailInput sadece 'code' istiyor
+            const data = await fetchGraphQL(VERIFY_EDU_MAIL, {
+                input: { code: code }
             });
 
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.message || 'Doğrulama başarısız.');
-
-            setSuccessMessage("Tebrikler! Öğrenci hesabınız başarıyla onaylandı.");
+            setSuccessMessage(data.verifyEduMail || "Tebrikler! Öğrenci hesabınız başarıyla onaylandı.");
             window.dispatchEvent(new Event('auth_status_changed'));
 
             setTimeout(() => {

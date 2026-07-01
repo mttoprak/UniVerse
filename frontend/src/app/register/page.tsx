@@ -4,6 +4,34 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Mail, Lock, User, KeyRound, Building2, Calendar, Loader2, ShieldCheck, AlertCircle, GraduationCap } from 'lucide-react';
 
+// --- GRAPHQL MUTASYONLARI (String Olarak) ---
+const SEND_VERIFICATION_MUTATION = `
+  mutation SendVerification($email: String!) {
+    sendVerification(email: $email) {
+      success
+      message
+    }
+  }
+`;
+
+const REGISTER_MUTATION = `
+  mutation Register($input: RegisterInput!) {
+    register(input: $input) {
+      token
+      is_complete
+    }
+  }
+`;
+
+const COMPLETE_PROFILE_MUTATION = `
+  mutation CompleteProfile($input: CompleteProfileInput!) {
+    completeProfile(input: $input) {
+      token
+      is_complete
+    }
+  }
+`;
+
 export default function RegisterPage() {
     const router = useRouter();
 
@@ -14,7 +42,6 @@ export default function RegisterPage() {
     const [fieldErrors, setFieldErrors] = useState<{ [key: string]: string }>({});
 
     const [tempToken, setTempToken] = useState<string | null>(null);
-
     const [acceptedTerms, setAcceptedTerms] = useState(false);
 
     const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -45,15 +72,22 @@ export default function RegisterPage() {
         }
     };
 
-    const handleBackendErrors = (errData: any) => {
-        if (errData.errors?.properties) {
-            const newErrors: { [key: string]: string } = {};
-            Object.keys(errData.errors.properties).forEach((field) => {
-                newErrors[field] = errData.errors.properties[field].errors[0];
-            });
-            setFieldErrors(newErrors);
+    // ESLint'i susturmak için any yerine unknown kullanıp cast ediyoruz
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handleGraphQLErrors = (errData: any) => {
+        if (Array.isArray(errData) && errData.length > 0) {
+            const err = errData[0];
+            if (err.extensions?.properties) {
+                const newErrors: { [key: string]: string } = {};
+                Object.keys(err.extensions.properties).forEach((field) => {
+                    newErrors[field] = err.extensions.properties[field].errors[0];
+                });
+                setFieldErrors(newErrors);
+            } else {
+                setError(err.message || 'Bir hata oluştu.');
+            }
         } else {
-            setError(errData.message || 'Bir hata oluştu.');
+            setError(errData?.message || 'Bir ağ hatası oluştu.');
         }
     };
 
@@ -62,23 +96,25 @@ export default function RegisterPage() {
         setError(null);
         setFieldErrors({});
         try {
-            const response = await fetch(`${API_URL}/api/auth/sendVerification`, {
+            const response = await fetch(`${API_URL}/graphql`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    email: formData.email,
-                    password: formData.password,
-                    name: formData.name,
-                    surname: formData.surname,
-                    account_type: formData.account_type
+                    query: SEND_VERIFICATION_MUTATION,
+                    variables: { email: formData.email }
                 })
             });
+            const result = await response.json();
 
-            const data = await response.json();
-            if (!response.ok) throw data;
-            setStep(2);
-        } catch (err: any) {
-            handleBackendErrors(err);
+            if (result.errors) throw result.errors;
+
+            if (result.data?.sendVerification?.success) {
+                setStep(2);
+            } else {
+                setError(result.data?.sendVerification?.message || "Doğrulama kodu gönderilemedi.");
+            }
+        } catch (err) {
+            handleGraphQLErrors(err);
         } finally {
             setIsLoading(false);
         }
@@ -88,26 +124,35 @@ export default function RegisterPage() {
         setIsLoading(true);
         setError(null);
         try {
-            const response = await fetch(`${API_URL}/api/auth/register`, {
+            const response = await fetch(`${API_URL}/graphql`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    email: formData.email,
-                    password: formData.password,
-                    name: formData.name,
-                    surname: formData.surname,
-                    account_type: formData.account_type,
-                    code: formData.code
+                    query: REGISTER_MUTATION,
+                    variables: {
+                        input: {
+                            email: formData.email,
+                            password: formData.password,
+                            name: formData.name,
+                            surname: formData.surname,
+                            account_type: formData.account_type,
+                            code: formData.code
+                        }
+                    }
                 })
             });
+            const result = await response.json();
 
-            const data = await response.json();
-            if (!response.ok) throw data;
+            if (result.errors) throw result.errors;
 
-            setTempToken(data.tempToken);
-            setStep(3);
-        } catch (err: any) {
-            handleBackendErrors(err);
+            if (result.data?.register?.token) {
+                setTempToken(result.data.register.token);
+                setStep(3);
+            } else {
+                setError("Kayıt tamamlanamadı, token alınamadı.");
+            }
+        } catch (err) {
+            handleGraphQLErrors(err);
         } finally {
             setIsLoading(false);
         }
@@ -119,8 +164,8 @@ export default function RegisterPage() {
         setSuccessMessage(null);
 
         try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const payload: any = {
-                account_type: formData.account_type,
                 username: formData.username,
             };
 
@@ -128,30 +173,35 @@ export default function RegisterPage() {
                 if (formData.university) payload.university = formData.university;
                 if (formData.edu_email) payload.edu_email = formData.edu_email;
             }
-            if (formData.birthdate) payload.birthdate = new Date(formData.birthdate);
+            if (formData.birthdate) payload.birthdate = formData.birthdate;
 
-            const response = await fetch(`${API_URL}/api/auth/complete-profile`, {
+            const response = await fetch(`${API_URL}/graphql`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${tempToken}`
+                    'Authorization': tempToken ? `Bearer ${tempToken}` : ""
                 },
-                body: JSON.stringify(payload)
+                body: JSON.stringify({
+                    query: COMPLETE_PROFILE_MUTATION,
+                    variables: { input: payload }
+                })
             });
+            const result = await response.json();
 
-            const data = await response.json();
-            if (!response.ok) throw data;
+            if (result.errors) throw result.errors;
 
-            localStorage.setItem('accessToken', data.accessToken);
-            window.dispatchEvent(new Event('auth_status_changed'));
+            if (result.data?.completeProfile?.token) {
+                localStorage.setItem('accessToken', result.data.completeProfile.token);
+                window.dispatchEvent(new Event('auth_status_changed'));
 
-            setSuccessMessage("Kayıt başarılı! Ekosisteme giriş yapılıyor...");
-            setTimeout(() => {
-                router.push('/feed');
-            }, 2000);
-
-        } catch (err: any) {
-            handleBackendErrors(err);
+                setSuccessMessage("Kayıt başarılı! Ekosisteme giriş yapılıyor...");
+                setTimeout(() => {
+                    router.push('/feed');
+                }, 2000);
+            }
+        } catch (err) {
+            handleGraphQLErrors(err);
+        } finally {
             setIsLoading(false);
         }
     };
@@ -312,14 +362,14 @@ export default function RegisterPage() {
                             <label htmlFor="terms" className="text-[11px] text-gray-400">
                                 <a href="/terms" target="_blank" className="text-cyan-400 hover:underline">Kullanım Koşulları</a>,
                                 <a href="/eula" target="_blank" className="text-cyan-400 hover:underline"> EULA</a> ve
-                                <a href="/privacy" target="_blank" className="text-cyan-400 hover:underline"> Gizlilik Politikası</a>'nı
+                                <a href="/privacy" target="_blank" className="text-cyan-400 hover:underline"> Gizlilik Politikası&apos;nı</a>
                                 okudum, onaylıyorum.
                             </label>
                         </div>
 
                         <button
                             onClick={handleCompleteProfile}
-                            disabled={isLoading || successMessage !== null || !acceptedTerms} // !acceptedTerms eklendi
+                            disabled={isLoading || successMessage !== null || !acceptedTerms}
                             className="w-full mt-4 flex items-center justify-center space-x-2 bg-emerald-500 hover:bg-emerald-400 text-[#0B0F19] py-3.5 rounded-xl font-black transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {isLoading ? <Loader2 className="animate-spin" size={20} /> : <span>Kurulumu Tamamla</span>}

@@ -5,13 +5,23 @@ import Link from 'next/link';
 import { Mail, Lock, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
+// GraphQL Mutation
+const LOGIN_MUTATION = `
+  mutation Login($input: LoginInput!) {
+    login(input: $input) {
+      token
+      is_complete
+    }
+  }
+`;
+
 export default function LoginPage() {
     const router = useRouter();
 
     // state management for UI feedback and form data
     const [isLoading, setIsLoading] = useState(false);
     const [generalError, setGeneralError] = useState<string | null>(null);
-    const [warning, setWarning] = useState<string | null>(null); // State for incomplete profile warnings
+    const [warning, setWarning] = useState<string | null>(null);
     const [fieldErrors, setFieldErrors] = useState<{ [key: string]: string }>({});
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -38,41 +48,54 @@ export default function LoginPage() {
 
     // helper function to parse backend errors
     const handleBackendErrors = (errData: any) => {
-        if (errData.errors?.properties) {
+        const error = Array.isArray(errData) ? errData[0] : errData;
+        const validationErrors = error?.extensions?.properties || error?.errors?.properties;
+
+        if (validationErrors) {
             const newErrors: { [key: string]: string } = {};
-            Object.keys(errData.errors.properties).forEach((field) => {
-                newErrors[field] = errData.errors.properties[field].errors[0];
+            Object.keys(validationErrors).forEach((field) => {
+                newErrors[field] = validationErrors[field].errors[0];
             });
             setFieldErrors(newErrors);
         } else {
-            setGeneralError(errData.message || 'Giriş yapma başarısız! Lütfen tekrar deneyin.');
+            setGeneralError(error?.message || 'Giriş yapma başarısız! Lütfen tekrar deneyin.');
         }
     };
 
     // handle form submission
     const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault(); // prevent default browser refresh
+        e.preventDefault();
         setIsLoading(true);
         setGeneralError(null);
-        setWarning(null); // clear previous warnings on new attempt
+        setWarning(null);
         setFieldErrors({});
         setSuccessMessage(null);
 
         try {
-            const response = await fetch(`${API_URL}/api/auth/login`, {
+            const response = await fetch(`${API_URL}/graphql`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(formData)
+                body: JSON.stringify({
+                    query: LOGIN_MUTATION,
+                    variables: {
+                        input: {
+                            email: formData.email,
+                            password: formData.password
+                        }
+                    }
+                })
             });
 
-            const data = await response.json();
+            const result = await response.json();
 
-            if (!response.ok) throw data;
+            if (result.errors) throw result.errors;
+
+            const data = result.data.login;
 
             // check if the user has completed the full 3-step registration
             if (data.is_complete) {
                 // success: save full access token
-                localStorage.setItem('accessToken', data.accessToken);
+                localStorage.setItem('accessToken', data.token);
                 window.dispatchEvent(new Event('auth_status_changed'));
                 setSuccessMessage("Giriş başarılı! Ekosisteme yönlendiriliyorsunuz...");
 
@@ -82,7 +105,7 @@ export default function LoginPage() {
 
             } else {
                 // incomplete profile: save temp token and show warning box
-                localStorage.setItem('tempToken', data.tempToken);
+                localStorage.setItem('tempToken', data.token);
                 setWarning("Profil kurulumunuz yarım kalmış. Sisteme erişmek için son adımı tamamlamalısınız.");
             }
 

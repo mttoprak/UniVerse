@@ -65,7 +65,7 @@ export default function Home() {
                         console.warn(`[API] Kullanıcı profili çekilemedi. Durum: ${userRes.status}`);
                     }
                 } catch (userErr) {
-                    console.error("Kullanıcı bilgisi alınamadı", userErr);
+                    console.log("Kullanıcı bilgisi alınamadı", userErr);
                 }
             }
 
@@ -91,7 +91,7 @@ export default function Home() {
                         console.warn(`[API] İlanlar çekilemedi. Durum: ${baseRes.status}`);
                     }
                 } catch (error) {
-                    console.error('İlanlar çekilirken ağ hatası:', error);
+                    console.log('İlanlar çekilirken ağ hatası:', error);
                 }
             } else {
                 console.log("Kurumsal hesap tespit edildi, ana akış ilanları gizlendi.");

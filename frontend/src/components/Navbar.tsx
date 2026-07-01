@@ -5,13 +5,59 @@ import Link from 'next/link';
 import { Search, Zap, Plus, LogOut, ChevronDown, UserCircle, Loader2 } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+
+// --- GRAPHQL YARDIMCI FONKSİYONU ---
+async function fetchGraphQL(query: string, variables: any = {}) {
+    const token = localStorage.getItem('accessToken');
+    const response = await fetch(`${API_URL}/graphql`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ query, variables })
+    });
+
+    if (!response.ok) {
+        throw new Error(`API Hatası: ${response.status}`);
+    }
+
+    const result = await response.json();
+    if (result.errors) {
+        throw new Error(result.errors[0].message);
+    }
+    return result.data;
+}
+
+// --- GRAPHQL SORGULARI ---
+const CHECK_AUTH = `#graphql
+    query CheckAuth {
+        getMe {
+            is_admin
+        }
+    }
+`;
+
+const SEARCH_LISTINGS = `#graphql
+    query SearchListings($q: String, $limit: Int) {
+        getListings(q: $q, limit: $limit) {
+            _id: id
+            title
+            price
+            type
+            photos
+        }
+    }
+`;
+
 export default function Navbar() {
     const router = useRouter();
     const pathname = usePathname();
 
     const [isMounted, setIsMounted] = useState(false);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
-    const [isAdmin, setIsAdmin] = useState(false); // Admin kontrolü için yeni state
+    const [isAdmin, setIsAdmin] = useState(false);
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
     // search bar states
@@ -23,21 +69,17 @@ export default function Navbar() {
     const dropdownRef = useRef<HTMLDivElement>(null);
     const searchRef = useRef<HTMLDivElement>(null);
 
-    const API_URL = process.env.NEXT_PUBLIC_API_URL;
-
     const checkAuth = async () => {
         const token = localStorage.getItem('accessToken');
         setIsLoggedIn(!!token);
 
         if (token) {
             try {
-                const res = await fetch(`${API_URL}/api/auth/me`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const data = await res.json();
-                setIsAdmin(data.user?.is_admin || data.is_admin || false);
+                // REST yerine GraphQL getMe sorgusu atıyoruz
+                const data = await fetchGraphQL(CHECK_AUTH);
+                setIsAdmin(data.getMe?.is_admin || false);
             } catch (e) {
-                console.error("Auth kontrol hatası:", e);
+                console.log("Auth kontrol hatası:", e);
                 setIsAdmin(false);
             }
         } else {
@@ -71,7 +113,7 @@ export default function Navbar() {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    // live search logic with debounce
+    // live search logic with debounce (REST'ten GraphQL'e geçirildi)
     useEffect(() => {
         const fetchResults = async () => {
             if (searchTerm.trim().length < 2) {
@@ -82,29 +124,18 @@ export default function Navbar() {
 
             setIsSearching(true);
             try {
-                const token = localStorage.getItem('accessToken');
-
-                const res = await fetch(`${API_URL}/api/listing?q=${encodeURIComponent(searchTerm.trim())}&page=1&limit=5`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
+                const data = await fetchGraphQL(SEARCH_LISTINGS, {
+                    q: searchTerm.trim(),
+                    limit: 5
                 });
-                const text = await res.text();
 
-                try {
-                    const data = JSON.parse(text);
-                    if (res.ok && data.listings) {
-                        setSearchResults(data.listings);
-                    } else {
-                        setSearchResults([]);
-                    }
-                } catch (parseError) {
-                    console.error("Backend'den geçersiz bir yanıt geldi (HTML dönmüş olabilir):", text.substring(0, 100));
+                if (data.getListings) {
+                    setSearchResults(data.getListings);
+                } else {
                     setSearchResults([]);
                 }
-
             } catch (error) {
-                console.error("Arama bağlantı hatası:", error);
+                console.log("Arama bağlantı hatası:", error);
                 setSearchResults([]);
             } finally {
                 setIsSearching(false);
@@ -117,7 +148,7 @@ export default function Navbar() {
         }, 500);
 
         return () => clearTimeout(delayDebounceFn);
-    }, [searchTerm, API_URL]);
+    }, [searchTerm]);
 
     const handleLogout = () => {
         localStorage.removeItem('accessToken');
@@ -128,6 +159,7 @@ export default function Navbar() {
         router.push('/');
         router.refresh();
     };
+
     return (
         <nav className="fixed w-full z-50 top-0 backdrop-blur-xl bg-[#0B0F19]/60 shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
 

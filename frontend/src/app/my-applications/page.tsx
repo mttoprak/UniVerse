@@ -19,13 +19,50 @@ interface Application {
     };
 }
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
+// --- GRAPHQL YARDIMCI FONKSİYONU ---
+async function fetchGraphQL(query: string, variables: any = {}) {
+    const token = localStorage.getItem('accessToken');
+    const response = await fetch(`${API_URL}/graphql`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ query, variables })
+    });
+
+    if (!response.ok) throw new Error(`API Hatası: ${response.status}`);
+    const result = await response.json();
+    if (result.errors) throw new Error(result.errors[0].message);
+    return result.data;
+}
+
+// --- GRAPHQL SORGULARI ---
+const GET_MY_APPLICATIONS = `#graphql
+    query GetMyApplications {
+        getMyApplications {
+            applications {
+                _id: id
+                status
+                note
+                createdAt
+                listing {
+                    _id: id
+                    title
+                    type
+                }
+            }
+        }
+    }
+`;
+
 export default function MyApplicationsPage() {
     const router = useRouter();
     const [applications, setApplications] = useState<Application[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-
-    const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
     useEffect(() => {
         const fetchApplications = async () => {
@@ -36,18 +73,8 @@ export default function MyApplicationsPage() {
             }
 
             try {
-                // Backend'deki endpoint'e istek atıyoruz
-                const response = await fetch(`${API_URL}/api/offer/my-applications`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-
-                const data = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(data.error || 'Başvurular getirilemedi.');
-                }
-
-                setApplications(data.applications || []);
+                const data = await fetchGraphQL(GET_MY_APPLICATIONS);
+                setApplications(data.getMyApplications?.applications || []);
             } catch (err: any) {
                 setError(err.message);
             } finally {
@@ -56,10 +83,12 @@ export default function MyApplicationsPage() {
         };
 
         fetchApplications();
-    }, [API_URL, router]);
+    }, [router]);
 
     const formatDate = (dateString: string) => {
-        return new Date(dateString).toLocaleDateString('tr-TR', {
+        // GraphQL'den string dönen timestamp'i Number'a çevirip güvenli tarih objesi oluşturuyoruz
+        const date = new Date(Number(dateString) || dateString);
+        return date.toLocaleDateString('tr-TR', {
             day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
         });
     };

@@ -96,6 +96,12 @@ input ChangePasswordInput {
     newPassword: String!
 }
 
+type SystemAnnouncement {
+    title: String!
+    message: String!
+    createdAt: String!
+}
+
 type Query {
     getMe: User
     getPublicProfile(id: ID!): PublicProfileResponse!
@@ -119,5 +125,9 @@ type Mutation {
     removeFromSaved(input: RemoveFromSavedInput!): SavedListResponse!
 
     generateUploadSignatureUser(folderName: String!): CloudinarySignatureResponseUser!
+}
+type Subscription {
+    # Herhangi bir argüman almıyor çünkü spesifik bir ID'ye bağlı değil, global.
+    systemAnnouncement: SystemAnnouncement!
 }
 `;

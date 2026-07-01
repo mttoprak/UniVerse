@@ -95,7 +95,7 @@ const keyGenerator = (req: Request, res: Response) => {
 // Tüm uygulama geneli için varsayılan limit
 export const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 dakika
-    max: 200,
+    max: 400,
     message: { error: "Çok fazla istekte bulundunuz, lütfen daha sonra tekrar deneyin.  ," },
     standardHeaders: true,
     legacyHeaders: false,

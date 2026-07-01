@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { Package, User, Calendar, Star, GraduationCap, Loader2, ExternalLink, ShieldCheck } from 'lucide-react';
 
 interface Advert {
-    _id: string;
+    _id: string; // UI uyumluluğu için
     title: string;
     price: number | string;
     category: string;
@@ -13,62 +13,98 @@ interface Advert {
     createdAt: string;
 }
 
+// MT NOT: Tek bir GraphQL Query ile hem kullanıcı profilini hem de ilanlarını çekiyoruz!
+const GET_USER_PROFILE_QUERY = `
+  query GetUserProfileData($userId: ID!) {
+    # 1. user.typeDefs içinden gelen kısım:
+    getPublicProfile(id: $userId) {
+      user {
+        id
+        username
+        name
+        surname
+        profile_photo
+        rating_sum
+        rating_count
+        account_type
+        is_verified
+        edu_email
+        university
+        createdAt
+      }
+      listing_count
+    }
+    
+    # 2. listing.typeDefs içinden gelen kısım:
+    getUserListings(userId: $userId) {
+      id
+      title
+      price
+      category
+      type
+      createdAt
+    }
+  }
+`;
+
 export default function PublicProfilePage() {
     const params = useParams();
     const router = useRouter();
-    const listingId = params.id as string;
+    // Eski kodda burası listingId'ydi, doğrusu userId olmalı
+    const userId = params.id as string;
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [userData, setUserData] = useState<any>(null);
     const [userListings, setUserListings] = useState<Advert[]>([]);
     const [pageLoading, setPageLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://universe-1-vdkr.onrender.com';
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
     useEffect(() => {
         const fetchPublicProfile = async () => {
-            if (!listingId) return;
+            if (!userId) return;
 
             try {
                 setPageLoading(true);
                 setError(null);
 
                 const token = localStorage.getItem('accessToken');
-                const headers = new Headers();
-                if (token) headers.set('Authorization', `Bearer ${token}`);
+                const headers: Record<string, string> = {
+                    'Content-Type': 'application/json'
+                };
+                if (token) headers['Authorization'] = `Bearer ${token}`;
 
-                const listingRes = await fetch(`${API_URL}/api/listing/${listingId}`, {
-                    method: 'GET',
-                    headers
+                const response = await fetch(`${API_URL}/graphql`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({
+                        query: GET_USER_PROFILE_QUERY,
+                        variables: { userId: userId }
+                    })
                 });
 
-                if (!listingRes.ok) {
-                    throw new Error('Kullanıcı bilgisine ulaşmak için referans ilan bulunamadı.');
+                const result = await response.json();
+
+                if (result.errors) {
+                    throw new Error(result.errors[0].message || 'Kullanıcı bilgisine ulaşılamadı.');
                 }
 
-                const listingDataJson = await listingRes.json();
-                const listingDoc = listingDataJson.listing || listingDataJson.data || listingDataJson;
-                const seller = listingDoc.owner || listingDoc.seller;
-
-                if (!seller) {
-                    throw new Error('İlanın sahibi bulunamadı.');
+                // 1. Kullanıcı Verisini Ayarla
+                const profileData = result.data?.getPublicProfile?.user;
+                if (!profileData) {
+                    throw new Error('Aradığınız profil mevcut değil veya kaldırılmış olabilir.');
                 }
+                setUserData(profileData);
 
-                setUserData(seller);
-
-                const sellerId = seller._id || seller;
-                const listingsRes = await fetch(`${API_URL}/api/listing/user/${sellerId}`, {
-                    method: 'GET',
-                    headers
-                });
-
-                if (listingsRes.ok) {
-                    const listingsData = await listingsRes.json();
-                    setUserListings(listingsData.listings || []);
-                }
+                // 2. Kullanıcının İlanlarını Ayarla
+                const listingsData = result.data?.getUserListings || [];
+                // Frontend HTML'i "_id" beklediği için GraphQL'den gelen "id"yi kopyalıyoruz
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                setUserListings(listingsData.map((ad: any) => ({ ...ad, _id: ad.id })));
 
             } catch (err: any) {
-                console.error(err);
+                console.log(err);
                 setError(err.message || "Kullanıcı verileri yüklenirken bir sorun oluştu.");
             } finally {
                 setPageLoading(false);
@@ -76,7 +112,7 @@ export default function PublicProfilePage() {
         };
 
         fetchPublicProfile();
-    }, [listingId, API_URL]);
+    }, [userId, API_URL]);
 
     if (pageLoading) {
         return (
@@ -94,16 +130,19 @@ export default function PublicProfilePage() {
                     <User size={40} className="text-rose-500" />
                 </div>
                 <h2 className="text-2xl font-black text-white mb-2">Kullanıcı Bulunamadı</h2>
-                <p className="text-gray-400 mb-6 max-w-md">{error || 'Aradığınız profil mevcut değil veya kaldırılmış olabilir.'}</p>
-                <button onClick={() => router.push('/feed')} className="px-6 py-3 bg-cyan-500 text-black font-bold rounded-xl hover:bg-cyan-400 transition-colors">
+                <p className="text-gray-400 mb-6 max-w-md">{error}</p>
+                <button onClick={() => router.push('/feed')} className="px-6 py-3 bg-cyan-500 text-[#0B0F19] font-bold rounded-xl hover:bg-cyan-400 transition-colors">
                     İlanlara Dön
                 </button>
             </div>
         );
     }
 
-    const userRating = userData.rating_count > 0 ? (userData.rating_sum / userData.rating_count).toFixed(1) : "0.0";
-    const joinYear = userData.createdAt ? new Date(userData.createdAt).getFullYear() : "Gizli";
+    // GraphQL'den gelen integer değerlerle güvenli matematik işlemi
+    const ratingSum = userData.rating_sum || 0;
+    const ratingCount = userData.rating_count || 0;
+    const userRating = ratingCount > 0 ? (ratingSum / ratingCount).toFixed(1) : "0.0";
+    const joinYear = userData.createdAt ? new Date(Number(userData.createdAt) || userData.createdAt).getFullYear() : "Gizli";
 
     return (
         <div className="min-h-screen pt-24 pb-12 px-4 md:px-8 max-w-6xl mx-auto flex flex-col relative text-gray-100">
@@ -133,7 +172,7 @@ export default function PublicProfilePage() {
                                 <div className="flex items-center gap-1 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-lg text-amber-400">
                                     <Star size={14} className="fill-current" />
                                     <span className="font-bold text-sm">{userRating}</span>
-                                    <span className="text-xs opacity-50">({userData.rating_count || 0})</span>
+                                    <span className="text-xs opacity-50">({ratingCount})</span>
                                 </div>
                             </div>
 

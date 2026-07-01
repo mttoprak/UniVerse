@@ -1,19 +1,17 @@
-import { userResolvers } from "./user.resolvers";
-import { authResolvers } from "./auth.resolvers";
-import { listingResolvers } from "./listing.resolvers";
+import { userResolvers      } from "./user.resolvers";
+import { authResolvers      } from "./auth.resolvers";
+import { listingResolvers   } from "./listing.resolvers";
 import { messagingResolvers } from "./messaging.resolvers";
-import { commentResolvers } from "./comment.resolvers";
-// import { listingResolvers } from "./listing.resolvers";
-// import { offerResolvers } from "./offer.resolvers";
+import { commentResolvers   } from "./comment.resolvers";
+import { adminResolvers     } from "./admin.resolvers";
+import { miscResolvers      } from "./misc.resolvers";
 
-// Bütün parçaları bir dizi içine koyuyoruz.
-// Apollo Server arka planda bunların hepsini zekice tek bir devasa objede birleştirecek.
 export const resolvers = [
     userResolvers,
     authResolvers,
     listingResolvers,
     messagingResolvers,
     commentResolvers,
-    // listingResolvers,
-    // offerResolvers
+    adminResolvers,
+    miscResolvers
 ];

@@ -23,6 +23,56 @@ interface Application {
     createdAt: string;
 }
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
+// --- GRAPHQL YARDIMCI FONKSİYONU ---
+async function fetchGraphQL(query: string, variables: any = {}) {
+    const token = localStorage.getItem('accessToken');
+    const response = await fetch(`${API_URL}/graphql`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ query, variables })
+    });
+
+    if (!response.ok) throw new Error(`API Hatası: ${response.status}`);
+    const result = await response.json();
+    if (result.errors) throw new Error(result.errors[0].message);
+    return result.data;
+}
+
+// --- GRAPHQL SORGULARI ---
+const GET_LISTING_APPLICATIONS = `#graphql
+    query GetListingApplications($listingId: ID!) {
+        getListingApplications(listingId: $listingId) {
+            applications {
+                _id: id
+                status
+                note
+                createdAt
+                applicant {
+                    _id: id
+                    name
+                    surname
+                    profile_photo
+                    university
+                }
+            }
+        }
+    }
+`;
+
+const RESPOND_TO_OFFER = `#graphql
+    mutation RespondToOffer($offerId: ID!, $action: String!) {
+        respondToOffer(offerId: $offerId, action: $action) {
+            _id: id
+            status
+        }
+    }
+`;
+
 export default function ListingApplicationsPage() {
     const params = useParams();
     const router = useRouter();
@@ -33,22 +83,14 @@ export default function ListingApplicationsPage() {
     const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    const API_URL = process.env.NEXT_PUBLIC_API_URL;
-
     useEffect(() => {
         const fetchApplications = async () => {
             const token = localStorage.getItem('accessToken');
             if (!token) return router.push('/login');
 
             try {
-                const res = await fetch(`${API_URL}/api/offer/listing/${listingId}/applications`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.error || 'Başvurular getirilemedi.');
-
-                setApplications(data.applications || []);
+                const data = await fetchGraphQL(GET_LISTING_APPLICATIONS, { listingId });
+                setApplications(data.getListingApplications?.applications || []);
             } catch (err: any) {
                 setError(err.message);
             } finally {
@@ -57,25 +99,14 @@ export default function ListingApplicationsPage() {
         };
 
         if (listingId) fetchApplications();
-    }, [listingId, API_URL, router]);
+    }, [listingId, router]);
 
     // Başvuruyu Kabul Et veya Reddet
     const handleRespond = async (offerId: string, action: 'accepted' | 'rejected') => {
-        const token = localStorage.getItem('accessToken');
         setActionLoadingId(offerId);
 
         try {
-            const res = await fetch(`${API_URL}/api/offer/${offerId}/respond`, {
-                method: 'PATCH',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ action })
-            });
-
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'İşlem başarısız.');
+            await fetchGraphQL(RESPOND_TO_OFFER, { offerId, action });
 
             // State'i güncelle ki sayfa yenilenmeden durumu değişsin
             setApplications(prev => prev.map(app =>
@@ -154,7 +185,7 @@ export default function ListingApplicationsPage() {
                                             {app.applicant.university && (
                                                 <span className="flex items-center gap-1"><GraduationCap size={14} className="text-blue-400"/> {app.applicant.university}</span>
                                             )}
-                                            <span className="flex items-center gap-1"><Clock size={14} /> {new Date(app.createdAt).toLocaleDateString('tr-TR')}</span>
+                                            <span className="flex items-center gap-1"><Clock size={14} /> {new Date(Number(app.createdAt) || app.createdAt).toLocaleDateString('tr-TR')}</span>
                                         </div>
 
                                         {/* Adayın Notu (Eğer varsa) */}

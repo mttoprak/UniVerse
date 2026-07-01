@@ -2,7 +2,8 @@
 
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useState, useEffect, useRef, Suspense } from 'react';
-import { io, Socket } from 'socket.io-client';
+import { getWsClient } from '@/utils/graphqlWs'; // Yolunu kendi klasör yapına göre düzelt
+import { createClient, Client } from 'graphql-ws'; // Socket.io yerine graphql-ws geldi
 import { Send, MapPin, Loader2, ArrowLeft, ArrowRight, Navigation, Tag, Store, CheckCheck, Check, ShieldCheck } from 'lucide-react';
 import { GoogleMap, useJsApiLoader, Marker } from '@react-google-maps/api';
 
@@ -17,8 +18,169 @@ const darkMapStyle = [
 ];
 
 const mapContainerStyle = { width: '100%', height: '100%', borderRadius: '0.75rem' };
-
 const LIBRARIES: ("places")[] = ["places"];
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+
+// --- GRAPHQL YARDIMCI FONKSİYONU ---
+async function fetchGraphQL(query: string, variables: any = {}) {
+    const token = localStorage.getItem('accessToken');
+    const response = await fetch(`${API_URL}/graphql`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ query, variables })
+    });
+
+    if (!response.ok) {
+        throw new Error(`API Hatası: ${response.status}`);
+    }
+
+    const result = await response.json();
+    if (result.errors) {
+        throw new Error(result.errors[0].message);
+    }
+    return result.data;
+}
+
+// --- GRAPHQL SORGULARI VE MUTASYONLARI ---
+const CHECK_AUTH = `#graphql
+query CheckAuth {
+    getMe { _id: id }
+}
+`;
+
+const GET_CONVERSATIONS = `#graphql
+query GetConversations {
+    getConversations(limit: 50) {
+        conversations {
+            _id: id
+            sellerId
+            buyerId
+            listing { _id: id title }
+            seller { _id: id username name profile_photo }
+            buyer { _id: id username name profile_photo }
+            lastMessage {
+                preview
+                sentAt
+                isRead
+                type
+            }
+            unreadSeller
+            unreadBuyer
+            status
+            offerStatus
+        }
+    }
+}
+`;
+
+const GET_MESSAGES = `#graphql
+query GetMessages($conversationId: ID!) {
+    getMessages(conversationId: $conversationId, limit: 100) {
+        messages {
+            _id: id
+            conversationId
+            senderId
+            text
+            photos
+            location
+            type
+            isRead
+            createdAt
+            offer {
+                _id: id
+                status
+                price
+                pricePer
+                note
+            }
+        }
+    }
+}
+`;
+
+const SEND_MESSAGE = `#graphql
+mutation SendMessage($input: SendMessageInput!) {
+    sendMessage(input: $input) {
+        _id: id
+        conversationId
+        senderId
+        text
+        photos
+        location
+        type
+        isRead
+        createdAt
+        offer {
+            _id: id
+            status
+            price
+            pricePer
+        }
+    }
+}
+`;
+
+const RESPOND_TO_OFFER = `#graphql
+mutation RespondToOffer($offerId: ID!, $action: String!) {
+    respondToOffer(offerId: $offerId, action: $action) {
+        _id: id
+        status
+    }
+}
+`;
+
+const CANCEL_OFFER = `#graphql
+mutation CancelOffer($offerId: ID!) {
+    cancelOffer(offerId: $offerId) {
+        _id: id
+        status
+    }
+}
+`;
+
+// --- GRAPHQL ABONELİKLERİ (SUBSCRIPTIONS) ---
+const NEW_MESSAGE_SUB = `#graphql
+    subscription NewMessage($conversationId: ID!) {
+        newMessage(conversationId: $conversationId) {
+            _id: id
+            conversationId
+            senderId
+            text
+            photos
+            location
+            type
+            isRead
+            createdAt
+            offer {
+                _id: id
+                status
+                price
+                pricePer
+                note
+            }
+        }
+    }
+`;
+
+const CONVERSATION_UPDATED_SUB = `#graphql
+    subscription ConversationUpdated($userId: ID!) {
+        conversationUpdated(userId: $userId) {
+            _id: id
+        }
+    }
+`;
+
+const OFFER_UPDATED_SUB = `#graphql
+    subscription OfferUpdated($conversationId: ID!) {
+        offerUpdated(conversationId: $conversationId) {
+            _id: id
+            status
+        }
+    }
+`;
 
 function MessagesContent() {
     const router = useRouter();
@@ -32,7 +194,7 @@ function MessagesContent() {
     const targetListingId = searchParams.get('listingId');
 
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-    const [socket, setSocket] = useState<Socket | null>(null);
+    const [wsClient, setWsClient] = useState<Client | null>(null);
     const [conversations, setConversations] = useState<any[]>([]);
     const [isConversationsLoading, setIsConversationsLoading] = useState(true);
     const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -40,13 +202,9 @@ function MessagesContent() {
 
     const [inputText, setInputText] = useState('');
     const [isMenuOpen, setIsMenuOpen] = useState(true);
-    const [isPeerTyping, setIsPeerTyping] = useState(false);
-    const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-    const activeConvRef = useRef<string | null>(null);
 
-    useEffect(() => {
-        activeConvRef.current = activeConversationId;
-    }, [activeConversationId]);
+    // Not: GraphQL Schema'da user_typing subscription'ı olmadığı için isPeerTyping sabit bırakıldı.
+    const [isPeerTyping, setIsPeerTyping] = useState(false);
 
     // modals
     const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
@@ -57,10 +215,6 @@ function MessagesContent() {
     const [offerPrice, setOfferPrice] = useState<string>('');
     const [offerPricePer, setOfferPricePer] = useState<'One Time' | 'Per Month' | 'Per Session'>('One Time');
 
-    const API_URL = process.env.NEXT_PUBLIC_API_URL;
-
-
-
     // fullscreen scroll lock for conversation page
     useEffect(() => {
         document.body.style.overflow = 'hidden';
@@ -70,92 +224,93 @@ function MessagesContent() {
     }, []);
 
     useEffect(() => {
-        let activeSocket: Socket | null = null;
+        if (typeof window === 'undefined') return;
 
-        const initializeChat = async () => {
-            const token = localStorage.getItem('accessToken');
-            if (!token) {
-                router.push('/login');
-                return;
+        const token = localStorage.getItem('accessToken');
+        if (!token) {
+            router.push('/login');
+            return;
+        }
+
+        // Merkezi client'i çağır
+        const client = getWsClient();
+        if(!client) return;
+
+        setWsClient(client);
+
+        // Kullanıcı verisini ve sohbet listesini çek
+        fetchGraphQL(CHECK_AUTH).then(userData => {
+            setCurrentUserId(userData.getMe?._id);
+            fetchConversations();
+        }).catch(err => console.log("Kullanıcı verisi alınamadı", err));
+
+        // DİKKAT: Burada return () => client.dispose(); SİLDİK.
+        // Çünkü client'in tüm uygulamada açık kalmasını istiyoruz.
+    }, [router]);
+
+    // 2. Global Abonelikler (Kullanıcıya özel konuşma güncellemeleri)
+    useEffect(() => {
+        if (!wsClient || !currentUserId) return;
+
+        const unsubscribeConv = wsClient.subscribe(
+            { query: CONVERSATION_UPDATED_SUB, variables: { userId: currentUserId } },
+            {
+                next: () => fetchConversations(),
+                error: (err) => console.log("Sohbet Güncelleme Abonelik Hatası:", err),
+                complete: () => {}
             }
+        );
 
-            try {
-                const userRes = await fetch(`${API_URL}/api/auth/me`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const userText = await userRes.text();
-                const userData = JSON.parse(userText);
+        return () => {
+            unsubscribeConv();
+        };
+    }, [wsClient, currentUserId]);
 
-                const myId = userData.user?._id || userData._id;
-                setCurrentUserId(myId);
+    // 3. Aktif Sohbet Abonelikleri (Yeni Mesaj ve Teklif Güncellemeleri)
+    useEffect(() => {
+        if (!wsClient || !activeConversationId) return;
 
-                activeSocket = io(API_URL, {
-                    withCredentials: true,
-                    auth: { token: `Bearer ${token}` }
-                });
-                setSocket(activeSocket);
-
-                activeSocket.on('connect', () => console.log('Socket Bağlandı ID:', activeSocket?.id));
-
-                activeSocket.on('new_message', (msg) => {
-                    console.log("SOKET YAKALADI (Yeni Mesaj):", msg);
-
-                    const msgConvId = typeof msg.conversation === 'object' && msg.conversation !== null
-                        ? msg.conversation._id
-                        : msg.conversation;
-
-                    if (String(msgConvId) === String(activeConvRef.current)) {
-                        console.log("ID'ler eşleşti, mesaj ekrana basılıyor!");
-                        setMessages((prev) => {
+        const unsubscribeMsg = wsClient.subscribe(
+            { query: NEW_MESSAGE_SUB, variables: { conversationId: activeConversationId } },
+            {
+                next: (data: any) => {
+                    const msg = data?.data?.newMessage;
+                    if (msg) {
+                        setMessages(prev => {
                             if (prev.some(m => String(m._id) === String(msg._id))) return prev;
                             return [msg, ...prev];
                         });
-                    } else {
-                        console.log("Mesaj geldi ama arka plandaki başka bir sohbete ait.");
                     }
-                });
-
-                activeSocket.on('messages_read', ({ conversationId }) => {
-                    if (conversationId === activeConvRef.current) {
-                        setMessages(prev => prev.map(m =>
-                            (m.conversation === conversationId && !m.isRead) ? { ...m, isRead: true } : m
-                        ));
-                    }
-                });
-
-                activeSocket.on('user_typing', ({ conversationId }) => {
-                    if (conversationId === activeConvRef.current) setIsPeerTyping(true);
-                });
-                activeSocket.on('user_stop_typing', ({ conversationId }) => {
-                    if (conversationId === activeConvRef.current) setIsPeerTyping(false);
-                });
-
-                activeSocket.on('offer_updated', ({ offerId, status }) => {
-                    setMessages(prev => prev.map(m => {
-                        if (m.offer && m.offer._id === offerId) return { ...m, offer: { ...m.offer, status } };
-                        return m;
-                    }));
-                });
-                activeSocket.on('conversation_updated', () => fetchConversations(token));
-                activeSocket.on('new_conversation', () => fetchConversations(token));
-
-                fetchConversations(token);
-
-            } catch (err) {
-                console.error("Başlangıç hatası:", err);
+                },
+                error: (err) => console.log("Yeni Mesaj Abonelik Hatası:", err),
+                complete: () => {}
             }
-        };
+        );
 
-        initializeChat();
+        const unsubscribeOffer = wsClient.subscribe(
+            { query: OFFER_UPDATED_SUB, variables: { conversationId: activeConversationId } },
+            {
+                next: (data: any) => {
+                    const offer = data?.data?.offerUpdated;
+                    if (offer) {
+                        setMessages(prev => prev.map(m => {
+                            if (m.offer && m.offer._id === offer._id) return { ...m, offer: { ...m.offer, status: offer.status } };
+                            return m;
+                        }));
+                    }
+                },
+                error: (err) => console.log("Teklif Güncelleme Abonelik Hatası:", err),
+                complete: () => {}
+            }
+        );
 
         return () => {
-            if (activeSocket) {
-                activeSocket.disconnect();
-                console.log("🧹 Eski socket temizlendi");
-            }
+            unsubscribeMsg();
+            unsubscribeOffer();
         };
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [wsClient, activeConversationId]);
 
+    // İlan ID'siyle gelindiyse varolan sohbeti seç
     useEffect(() => {
         if (targetListingId && conversations.length > 0) {
             const existingConv = conversations.find(c => {
@@ -169,47 +324,22 @@ function MessagesContent() {
         }
     }, [targetListingId, conversations]);
 
-    useEffect(() => {
-        if (socket && activeConversationId) {
-            socket.emit('mark_read', activeConversationId);
-
-            setConversations(prev => prev.map(c => {
-                if (c._id === activeConversationId) {
-                    const isSeller = c.seller?._id === currentUserId || c.seller === currentUserId;
-                    return { ...c, unreadCount: { ...c.unreadCount, [isSeller ? 'seller' : 'buyer']: 0 } };
-                }
-                return c;
-            }));
-        }
-    }, [activeConversationId, messages.length, socket]);
-
-    useEffect(() => {
-        if (socket && activeConversationId) {
-            socket.emit('join_conversation', activeConversationId);
-        }
-    }, [socket, activeConversationId]);
-
-    const safeFetch = async (url: string, options: any) => {
-        const res = await fetch(url, options);
-        const text = await res.text();
-        try {
-            const data = JSON.parse(text);
-            return { res, data };
-        } catch (e) {
-            console.error(`[API Hatası] Adres: ${url}\nGelen Veri:`, text.substring(0, 200));
-            throw new Error("Sunucudan geçersiz bir veri döndü.");
-        }
-    };
-
-    const fetchConversations = async (token: string) => {
+    const fetchConversations = async () => {
         setIsConversationsLoading(true);
         try {
-            const { data } = await safeFetch(`${API_URL}/api/messaging/conversations`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (data.conversations) setConversations(data.conversations);
+            const data = await fetchGraphQL(GET_CONVERSATIONS);
+            if (data.getConversations?.conversations) {
+                const mappedConvs = data.getConversations.conversations.map((c: any) => ({
+                    ...c,
+                    unreadCount: {
+                        seller: c.unreadSeller,
+                        buyer: c.unreadBuyer
+                    }
+                }));
+                setConversations(mappedConvs);
+            }
         } catch (err) {
-            console.error('Sohbetler çekilemedi', err);
+            console.log('Sohbetler çekilemedi', err);
         } finally {
             setIsConversationsLoading(false);
         }
@@ -218,29 +348,35 @@ function MessagesContent() {
     const handleSelectConversation = async (convId: string) => {
         setActiveConversationId(convId);
         setIsMenuOpen(false);
-        const token = localStorage.getItem('accessToken');
+
+        // UI'da (Sol menüde) kırmızı rozeti anında sıfırla (Optimistic Update)
+        setConversations(prev => prev.map(conv => {
+            if (conv._id === convId) {
+                const isSeller = conv.sellerId === currentUserId || conv.seller?._id === currentUserId;
+                return {
+                    ...conv,
+                    unreadCount: {
+                        ...conv.unreadCount,
+                        [isSeller ? 'seller' : 'buyer']: 0
+                    }
+                };
+            }
+            return conv;
+        }));
 
         try {
-            const { data } = await safeFetch(`${API_URL}/api/messaging/${convId}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-
-            if (data.messages) {
-                setMessages(data.messages.reverse());
+            const data = await fetchGraphQL(GET_MESSAGES, { conversationId: convId });
+            if (data.getMessages?.messages) {
+                setMessages([...data.getMessages.messages].reverse());
             }
         } catch (err) {
-            console.error('Mesajlar çekilemedi', err);
+            console.log('Mesajlar çekilemedi', err);
         }
     };
 
     const activeConvData = conversations.find(c => c._id === activeConversationId);
 
     const sendMessageToApi = async (payload: {text?: string, locationUrl?: string, offerPrice?: string}) => {
-        const token = localStorage.getItem('accessToken');
-        if (!token) return;
-
-        const formData = new FormData();
-
         let resolvedListingId = targetListingId;
         if (activeConvData) {
             resolvedListingId = typeof activeConvData.listing === 'object'
@@ -253,46 +389,38 @@ function MessagesContent() {
             return;
         }
 
-        formData.append('listingId', resolvedListingId as string);
-        if (activeConversationId) {
-            formData.append('conversationId', activeConversationId);
-        }
+        const inputPayload: any = {
+            listingId: resolvedListingId,
+        };
 
-        if (payload.text) formData.append('text', payload.text);
-        if (payload.locationUrl) formData.append('location', payload.locationUrl);
+        if (activeConversationId) inputPayload.conversationId = activeConversationId;
+        if (payload.text) inputPayload.text = payload.text;
+        if (payload.locationUrl) inputPayload.location = payload.locationUrl;
+
         if (payload.offerPrice) {
-            formData.append('offerPrice', payload.offerPrice);
-            formData.append('offerPricePer', offerPricePer);
+            inputPayload.offerPrice = parseFloat(payload.offerPrice);
+            inputPayload.offerPricePer = offerPricePer;
         }
 
         try {
-            const { res, data } = await safeFetch(`${API_URL}/api/messaging`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
-                body: formData
-            });
+            const data = await fetchGraphQL(SEND_MESSAGE, { input: inputPayload });
+            const newMessage = data.sendMessage;
 
-            if (!res.ok) {
-                const errorMsg = data.errors ? JSON.stringify(data.errors) : (data.message || 'Gönderim başarısız');
-                throw new Error(errorMsg);
+            if (!activeConversationId && newMessage.conversationId) {
+                setActiveConversationId(newMessage.conversationId);
+                fetchConversations();
             }
 
-            if (data.isNewConversation && data.conversationId) {
-                setActiveConversationId(data.conversationId);
-                fetchConversations(token);
-                if (socket) socket.emit('join_conversation', data.conversationId);
-            }
-
-            if (data.message) {
+            if (newMessage) {
                 setMessages(prev => {
-                    if (prev.some(m => m._id === data.message._id)) return prev;
-                    return [data.message, ...prev];
+                    if (prev.some(m => m._id === newMessage._id)) return prev;
+                    return [newMessage, ...prev];
                 });
-                fetchConversations(token);
+                fetchConversations();
             }
 
         } catch (err: any) {
-            console.error("Mesaj Gönderim Hatası:", err);
+            console.log("Mesaj Gönderim Hatası:", err);
             alert("Mesaj gönderilemedi: " + err.message);
         }
     };
@@ -315,46 +443,24 @@ function MessagesContent() {
 
     const handleOfferSubmit = () => {
         if(!offerPrice) return;
-
         sendMessageToApi({ offerPrice: offerPrice });
-
         setIsOfferModalOpen(false);
         setOfferPrice('');
     };
 
     const handleOfferAction = async (offerId: string, action: 'accepted' | 'rejected' | 'cancel') => {
-        const token = localStorage.getItem('accessToken');
-        if (!token) return;
-
         try {
-            let endpoint = `${API_URL}/api/offer/${offerId}/respond`;
-            let options: any = {
-                method: 'PATCH',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ action })
-            };
-
             if (action === 'cancel') {
-                endpoint = `${API_URL}/api/offer/${offerId}/cancel`;
-                delete options.body;
-            }
-
-            const { res, data } = await safeFetch(endpoint, options);
-
-            if (!res.ok) {
-                const errorMsg = data.errors ? JSON.stringify(data.errors) : (data.error || 'İşlem başarısız');
-                throw new Error(errorMsg);
+                await fetchGraphQL(CANCEL_OFFER, { offerId });
+            } else {
+                await fetchGraphQL(RESPOND_TO_OFFER, { offerId, action });
             }
 
             if (activeConversationId) {
                 handleSelectConversation(activeConversationId);
             }
-
         } catch (err: any) {
-            alert(err.message);
+            alert(err.message || 'İşlem başarısız');
         }
     };
 
@@ -409,7 +515,7 @@ function MessagesContent() {
                             <p className="text-gray-500 text-sm italic text-center mt-5">Henüz sohbetiniz yok.</p>
                         ) : (
                             conversations.map((conv) => {
-                                const isSeller = conv.seller?._id === currentUserId;
+                                const isSeller = conv.sellerId === currentUserId || conv.seller?._id === currentUserId;
                                 const targetUser = isSeller ? conv.buyer : conv.seller;
 
                                 if (!targetUser) return null;
@@ -429,7 +535,7 @@ function MessagesContent() {
                                             <div className="flex justify-between items-baseline mb-1">
                                                 <h3 className="font-bold text-white text-sm truncate">{targetUser.username || targetUser.name}</h3>
                                                 <span className="text-[10px] text-gray-500 whitespace-nowrap ml-2">
-                                                    {conv.lastMessage?.sentAt ? new Date(conv.lastMessage.sentAt).toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'}) : ''}
+                                                    {conv.lastMessage?.sentAt ? new Date(Number(conv.lastMessage.sentAt) || conv.lastMessage.sentAt).toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'}) : ''}
                                                 </span>
                                             </div>
                                             <div className="flex justify-between items-center gap-2">
@@ -544,9 +650,9 @@ function MessagesContent() {
 
                         {messages.map((msg) => {
                             const isSystem = msg.type === 'system';
-                            const isAdmin = msg.type === 'admin'; // YENİ: Admin kontrolü eklendi
-                            const senderIdStr = typeof msg.sender === 'object' ? msg.sender?._id : msg.sender;
-                            const isMe = senderIdStr === currentUserId;
+                            const isAdmin = msg.type === 'admin';
+                            const senderIdStr = typeof msg.sender === 'object' ? msg.sender?._id : (msg.senderId || msg.sender);
+                            const isMe = String(senderIdStr) === String(currentUserId);
 
                             if (isSystem) {
                                 return (
@@ -625,7 +731,7 @@ function MessagesContent() {
 
                                         <div className="flex items-center justify-end gap-1.5 mt-2 opacity-70">
                                             <span className="text-[10px] block text-right">
-                                                {msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'}) : 'Şimdi'}
+                                                {msg.createdAt ? new Date(Number(msg.createdAt) || msg.createdAt).toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'}) : 'Şimdi'}
                                             </span>
                                             {isMe && (
                                                 msg.isRead ? <CheckCheck size={14} className="text-cyan-200" /> : <Check size={14} className="text-gray-300" />
@@ -649,16 +755,7 @@ function MessagesContent() {
                                     <input
                                         type="text"
                                         value={inputText}
-                                        onChange={(e) => {
-                                            setInputText(e.target.value);
-                                            if (socket && activeConversationId) {
-                                                socket.emit('typing', activeConversationId);
-                                                if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-                                                typingTimeoutRef.current = setTimeout(() => {
-                                                    socket.emit('stop_typing', activeConversationId);
-                                                }, 2000);
-                                            }
-                                        }}
+                                        onChange={(e) => setInputText(e.target.value)}
                                         placeholder="Mesajınızı yazın..."
                                         className="w-full bg-transparent outline-none text-sm"
                                         disabled={!activeConversationId && !targetListingId}

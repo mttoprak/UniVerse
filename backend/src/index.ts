@@ -37,7 +37,6 @@ import adminRouter from "./routes/admin.router";
 import { GraphQLContext, createContext } from "./graphql/context";
 import { ApolloServer } from "@apollo/server";
 import { expressMiddleware } from "@as-integrations/express4";
-// import { resolvers } from "./graphql/resolvers";
 import { resolvers } from "./graphql/resolvers/index";
 import { typeDefs } from "./graphql/typeDefs/index";
 import {startPendingVerificationCron} from "./cron/expiredPendingVerification.prisma.job";
@@ -48,6 +47,7 @@ import { useServer } from 'graphql-ws/use/ws';
 import { ApolloServerPluginDrainHttpServer } from '@apollo/server/plugin/drainHttpServer';
 import { prisma } from "./graphql/context";
 import jwt from 'jsonwebtoken';
+import { onlineUsersMap } from "./utils/onlineUsers.util";
 
 const app = express()
 const httpServer = http.createServer(app)   // HTTP Server for Socket.io
@@ -57,27 +57,34 @@ const PORT = process.env.PORT || 5000
 app.set("trust proxy", 1);
 app.use(express.json())
 app.use(cors({
-    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    origin: [process.env.CLIENT_URL || "http://localhost:3000", "http://192.168.1.59:3000"], // Local IP'ni de ekle (hata logunda bu IP'den istek geldiği gözüküyor)
     credentials: true
 }))
-
 // ─── RATE LIMITING & IP ──────────────────────
 // Sıralama çok kritik: Önce IP bulunur, sonra limit uygulanır
 app.use(ipResolver);
-app.use(globalLimiter);
 
+// WebSocket handshake isteklerini (Upgrade) rate limiter'dan hariç tutuyoruz
+// app.use((req, res, next) => {
+//     // Eğer istek bir WebSocket Upgrade isteğiyse Limiter'ı atla
+//     if (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket') {
+//         return next();
+//     }
+//     // Değilse global limiter'a gir
+//     globalLimiter(req, res, next);
+// });
 // ─── ROUTES ──────────────────────────────────
 
-// We will add these in the future
-app.use("/api/auth", authRouter);
-app.use("/api/misc", miscRouter);
-app.use('/api/test', testRouter);
-app.use('/api/listing', listingRouter);
-app.use('/api/comment', commendRouter);
-app.use("/api/user", userRouter);
-app.use("/api/messaging", messageRouter);
-app.use("/api/offer", offerRouter);
-app.use('/api/admin', adminRouter);
+// // We will add these in the future
+// app.use("/api/auth", authRouter);
+// app.use("/api/misc", miscRouter);
+// app.use('/api/test', testRouter);
+// app.use('/api/listing', listingRouter);
+// app.use('/api/comment', commendRouter);
+// app.use("/api/user", userRouter);
+// app.use("/api/messaging", messageRouter);
+// app.use("/api/offer", offerRouter);
+// app.use('/api/admin', adminRouter);
 
 app.get("/", (req: Request, res: Response) => {
     res.json({ message: "UniVerse Backend API working" })
@@ -99,7 +106,7 @@ mongoose.connection.on("disconnected", () => {
 
 const start = async () => {
     try {
-        await connect()
+        // await connect()
 
         // ─── APOLLO SERVER ENTEGRASYONU ───────────
         const schema = makeExecutableSchema({ typeDefs, resolvers });
@@ -116,6 +123,60 @@ const start = async () => {
 
         const serverCleanup = useServer({
             schema,
+
+            onConnect: async (ctx) => {
+                const paramAuth = ctx.connectionParams?.Authorization as string | undefined;
+                const headerAuth = ctx.extra.request.headers.authorization;
+                const authHeader = paramAuth || headerAuth;
+
+                if (authHeader && authHeader.startsWith("Bearer ")) {
+                    try {
+                        const token = authHeader.split(" ")[1];
+                        const decodedUnverified = jwt.decode(token) as any;
+
+                        if (decodedUnverified && decodedUnverified.userId) {
+                            const userId = decodedUnverified.userId;
+
+                            // IP adresini yakalama
+                            const req = ctx.extra.request;
+                            const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || "Bilinmiyor";
+                            const ip = Array.isArray(rawIp) ? rawIp[0] : rawIp;
+
+                            const existingUser = onlineUsersMap.get(userId);
+
+                            if (existingUser) {
+                                // Zaten online, sekme sayısını artır
+                                existingUser.connectionsCount += 1;
+                            } else {
+                                // İlk bağlantı
+                                onlineUsersMap.set(userId, {
+                                    ip,
+                                    connectedAt: new Date().toISOString(),
+                                    connectionsCount: 1
+                                });
+                            }
+
+                            // Disconnect için userId'yi context cebine koy
+                            (ctx.extra as any).userId = userId;
+                        }
+                    } catch (err) {
+                        // Hataları yut, doğrulama asıl context'te yapılacak
+                    }
+                }
+            },
+            onDisconnect: (ctx) => {
+                const userId = (ctx.extra as any).userId;
+                if (userId) {
+                    const existingUser = onlineUsersMap.get(userId);
+                    if (existingUser) {
+                        existingUser.connectionsCount -= 1;
+                        if (existingUser.connectionsCount <= 0) {
+                            onlineUsersMap.delete(userId);
+                        }
+                    }
+                }
+            },
+
             context: async (ctx, msg, args) => {
                 // 1. Frontend (Apollo Client) üzerinden gelme ihtimali (Connection Params)
                 const paramAuth = ctx.connectionParams?.Authorization as string | undefined;
@@ -204,7 +265,7 @@ const start = async () => {
         // ──────────────────────────────────────────────────
 
         //Web Socket Server
-        initSocket(httpServer)
+        // initSocket(httpServer)
 
         // Zamanlanmış görevleri başlat
         // startExpiredListingsCron();

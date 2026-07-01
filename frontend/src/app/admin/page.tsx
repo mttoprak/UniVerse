@@ -8,78 +8,159 @@ import {
     Eye, Clock, CheckCircle
 } from 'lucide-react';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
+// --- GRAPHQL YARDIMCI FONKSİYONU ---
+async function fetchGraphQL(query: string, variables: any = {}) {
+    const token = localStorage.getItem('accessToken');
+    const response = await fetch(`${API_URL}/graphql`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ query, variables })
+    });
+
+    if (!response.ok) {
+        if (response.status === 401 || response.status === 403) throw new Error("AUTH_ERROR");
+        throw new Error(`API Hatası: ${response.status}`);
+    }
+
+    const result = await response.json();
+    if (result.errors) throw new Error(result.errors[0].message);
+    return result.data;
+}
+
+// --- GRAPHQL QUERIES & MUTATIONS ---
+const GET_DASHBOARD_STATS = `#graphql
+    query GetDashboardStats {
+        getDashboardStats {
+            users { total newThisWeek }
+            listings { active }
+            activity { totalConversations totalOffers }
+        }
+    }
+`;
+
+const GET_ALL_LISTINGS = `#graphql
+    query GetAllListingsAdmin {
+        getAllListingsAdmin(limit: 100) {
+            listings { _id: id title is_deleted status owner { username } }
+        }
+    }
+`;
+
+const GET_ONLINE_USERS = `#graphql
+    query GetOnlineUsers {
+        getOnlineUsers {
+            totalOnline
+            users { userId ip connectedAt userInfo { username } }
+        }
+    }
+`;
+
+const GET_USER_DETAILS = `#graphql
+    query GetUserFullDetails($id: ID!) {
+        getUserFullDetails(id: $id) {
+            user { _id: id username email profile_photo is_verified is_banned }
+            logs { id action entity_type metadata createdAt }
+        }
+    }
+`;
+
+const GET_CONV_DETAILS = `#graphql
+    query GetConversationDetailsAdmin($convId: ID!) {
+        getConversationDetailsAdmin(convId: $convId) {
+            conversation { _id: id listing { title } seller { username } buyer { username } }
+            messages { _id: id type text sender { username } }
+        }
+    }
+`;
+
+const TOGGLE_BAN = `#graphql
+    mutation ToggleBanStatus($identifier: String!) {
+        toggleBanStatus(identifier: $identifier) { is_banned }
+    }
+`;
+
+const VERIFY_USER = `#graphql
+    mutation ManualVerifyUser($id: ID!) {
+        manualVerifyUser(id: $id) { is_verified }
+    }
+`;
+
+const DELETE_LISTING = `#graphql
+    mutation AdminDeleteListing($id: ID!) {
+        adminDeleteListing(id: $id)
+    }
+`;
+
+const BROADCAST_MSG = `#graphql
+    mutation BroadcastAnnouncement($title: String!, $message: String!) {
+        broadcastAnnouncement(title: $title, message: $message)
+    }
+`;
+
+const SEND_ADMIN_MSG = `#graphql
+    mutation SendAdminMessageToConversation($convId: ID!, $text: String!) {
+        sendAdminMessageToConversation(convId: $convId, text: $text) {
+            _id: id type text sender { username }
+        }
+    }
+`;
+
+
 export default function AdminDashboardPage() {
     const router = useRouter();
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://universe-1-vdkr.onrender.com';
 
-    // state management
     const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'listings' | 'system' | 'conversations'>('dashboard');
     const [isLoading, setIsLoading] = useState(true);
     const [toastMessage, setToastMessage] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
 
-    // tab data states
     const [stats, setStats] = useState<any>(null);
     const [listings, setListings] = useState<any[]>([]);
     const [onlineData, setOnlineData] = useState<{ totalOnline: number, users: any[] }>({ totalOnline: 0, users: [] });
 
-    // user search states
     const [userSearchQuery, setUserSearchQuery] = useState('');
     const [userDetails, setUserDetails] = useState<any>(null);
     const [isUserSearching, setIsUserSearching] = useState(false);
 
-    // broadcast state
     const [broadcastData, setBroadcastData] = useState({ title: '', message: '' });
 
-    // conversation search state
     const [convSearchQuery, setConvSearchQuery] = useState('');
     const [convDetails, setConvDetails] = useState<any>(null);
     const [adminMsgText, setAdminMsgText] = useState('');
 
-    // --- GENERAL FUNCTIONS ---
     const showToast = (text: string, type: 'success' | 'error' = 'success') => {
         setToastMessage({ text, type });
         setTimeout(() => setToastMessage(null), 3000);
     };
 
-    const fetchWithAuth = async (endpoint: string, options: any = {}) => {
-        const token = localStorage.getItem('accessToken');
-        if (!token) {
-            router.push('/login');
-            throw new Error("No token");
+    const handleGraphQLError = (err: any) => {
+        if (err.message === "AUTH_ERROR") {
+            router.push('/feed');
+        } else {
+            showToast(err.message || "Bir hata oluştu", 'error');
         }
-        const res = await fetch(`${API_URL}${endpoint}`, {
-            ...options,
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-                ...(options.headers || {})
-            }
-        });
-        if (res.status === 401 || res.status === 403) {
-            router.push('/feed'); // Admin değilse feed'e at
-            throw new Error("Yetkisiz erişim");
-        }
-        return res;
     };
 
-    // --- DATA EXTRACTION (TABS) ---
     useEffect(() => {
         const loadTabContent = async () => {
             setIsLoading(true);
             try {
                 if (activeTab === 'dashboard') {
-                    const res = await fetchWithAuth('/api/admin/dashboard/stats');
-                    setStats(await res.json());
+                    const data = await fetchGraphQL(GET_DASHBOARD_STATS);
+                    setStats(data.getDashboardStats);
                 } else if (activeTab === 'listings') {
-                    const res = await fetchWithAuth('/api/admin/listings?limit=100');
-                    const data = await res.json();
-                    setListings(data.listings || []);
+                    const data = await fetchGraphQL(GET_ALL_LISTINGS);
+                    setListings(data.getAllListingsAdmin.listings || []);
                 } else if (activeTab === 'system') {
-                    const res = await fetchWithAuth('/api/admin/system/online-users');
-                    setOnlineData(await res.json());
+                    const data = await fetchGraphQL(GET_ONLINE_USERS);
+                    setOnlineData(data.getOnlineUsers);
                 }
-            } catch (err) {
-                console.error(err);
+            } catch (err: any) {
+                handleGraphQLError(err);
             } finally {
                 setIsLoading(false);
             }
@@ -87,7 +168,6 @@ export default function AdminDashboardPage() {
         loadTabContent();
     }, [activeTab]);
 
-    // --- USER MANAGEMENT ---
     const handleUserSearch = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!userSearchQuery) return;
@@ -95,88 +175,65 @@ export default function AdminDashboardPage() {
         setUserDetails(null);
         try {
             const cleanQuery = userSearchQuery.trim().replace(/^@/, '');
-
-            const res = await fetchWithAuth(`/api/admin/users/${cleanQuery}/details`);
-            if (!res.ok) throw new Error("Kullanıcı bulunamadı.");
-            setUserDetails(await res.json());
-        } catch (err: any) {
-            showToast(err.message, 'error');
-        } finally {
-            setIsUserSearching(false);
-        }
+            const data = await fetchGraphQL(GET_USER_DETAILS, { id: cleanQuery });
+            setUserDetails(data.getUserFullDetails);
+        } catch (err: any) { handleGraphQLError(err); }
+        finally { setIsUserSearching(false); }
     };
 
     const handleToggleBan = async (identifier: string) => {
         try {
-            const res = await fetchWithAuth(`/api/admin/users/${identifier}/ban`, { method: 'PATCH' });
-            const data = await res.json();
-            showToast(data.message);
-            if (userDetails) setUserDetails({ ...userDetails, user: { ...userDetails.user, is_banned: data.is_banned } });
-        } catch (err) { showToast("Ban işlemi başarısız", 'error'); }
+            const data = await fetchGraphQL(TOGGLE_BAN, { identifier });
+            showToast("Ban durumu güncellendi");
+            if (userDetails) setUserDetails({ ...userDetails, user: { ...userDetails.user, is_banned: data.toggleBanStatus.is_banned } });
+        } catch (err: any) { handleGraphQLError(err); }
     };
 
     const handleVerifyUser = async (id: string) => {
         try {
-            const res = await fetchWithAuth(`/api/admin/users/${id}/verify`, { method: 'PATCH' });
-            const data = await res.json();
-            showToast(data.message);
+            await fetchGraphQL(VERIFY_USER, { id });
+            showToast("Kullanıcı onaylandı");
             if (userDetails) setUserDetails({ ...userDetails, user: { ...userDetails.user, is_verified: true } });
-        } catch (err) { showToast("Onay başarısız", 'error'); }
+        } catch (err: any) { handleGraphQLError(err); }
     };
 
-    // --- AD MANAGEMENT ---
     const handleDeleteListing = async (id: string) => {
         if (!confirm("İlanı silmek istediğinize emin misiniz? (Soft Delete)")) return;
         try {
-            await fetchWithAuth(`/api/admin/listings/${id}`, { method: 'DELETE' });
-            setListings(prev => prev.filter(l => l._id !== id));
+            await fetchGraphQL(DELETE_LISTING, { id });
+            setListings(prev => prev.map(l => l._id === id ? { ...l, is_deleted: true } : l));
             showToast("İlan silindi");
-        } catch (err) { showToast("Silme hatası", 'error'); }
+        } catch (err: any) { handleGraphQLError(err); }
     };
 
-    // --- BROADCASTING ---
     const handleSendBroadcast = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!broadcastData.title || !broadcastData.message) return;
         try {
-            await fetchWithAuth('/api/admin/system/broadcast', {
-                method: 'POST', body: JSON.stringify(broadcastData)
-            });
+            await fetchGraphQL(BROADCAST_MSG, broadcastData);
             showToast("Duyuru gönderildi!");
             setBroadcastData({ title: '', message: '' });
-        } catch (err) { showToast("Duyuru gönderilemedi", 'error'); }
+        } catch (err: any) { handleGraphQLError(err); }
     };
 
-    // --- CONVERSATION INTERVENTION ---
     const handleConvSearch = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!convSearchQuery) return;
         try {
-            const res = await fetchWithAuth(`/api/admin/conversations/${convSearchQuery}`);
-            if (!res.ok) throw new Error("Sohbet bulunamadı");
-            setConvDetails(await res.json());
-        } catch (err: any) { showToast(err.message, 'error'); }
+            const data = await fetchGraphQL(GET_CONV_DETAILS, { convId: convSearchQuery });
+            setConvDetails(data.getConversationDetailsAdmin);
+        } catch (err: any) { handleGraphQLError(err); }
     };
 
     const handleSendAdminMessage = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!adminMsgText || !convDetails) return;
         try {
-            const res = await fetchWithAuth(`/api/admin/conversations/${convDetails.conversation._id}/send-message`, {
-                method: 'POST', body: JSON.stringify({ text: adminMsgText })
-            });
-            const newMsg = await res.json();
-
-            if (!res.ok) {
-                throw new Error(newMsg.error || "Mesaj iletilemedi");
-            }
-
-            setConvDetails({ ...convDetails, messages: [...convDetails.messages, newMsg.message] });
+            const data = await fetchGraphQL(SEND_ADMIN_MSG, { convId: convDetails.conversation._id, text: adminMsgText });
+            setConvDetails({ ...convDetails, messages: [...convDetails.messages, data.sendAdminMessageToConversation] });
             setAdminMsgText('');
             showToast("Mesaj iletildi");
-        } catch (err: any) {
-            showToast(err.message || "Mesaj iletilemedi", 'error');
-        }
+        } catch (err: any) { handleGraphQLError(err); }
     };
 
     return (
@@ -213,7 +270,6 @@ export default function AdminDashboardPage() {
 
             {/* main content area */}
             <main className="flex-1 bg-[#0B0F19]/60 backdrop-blur-xl border border-white/10 rounded-3xl p-6 md:p-8 min-h-[500px]">
-
                 {isLoading ? (
                     <div className="h-full flex flex-col items-center justify-center py-20">
                         <Loader2 className="w-12 h-12 text-rose-500 animate-spin mb-4" />
@@ -312,11 +368,11 @@ export default function AdminDashboardPage() {
                                                     <tbody>
                                                     {userDetails.logs.length === 0 && <tr><td colSpan={4} className="p-4 text-center">Log bulunamadı.</td></tr>}
                                                     {userDetails.logs.map((log:any) => (
-                                                        <tr key={log._id} className="border-b border-white/5 hover:bg-white/5">
-                                                            <td className="px-4 py-3 whitespace-nowrap">{new Date(log.createdAt).toLocaleString('tr-TR')}</td>
+                                                        <tr key={log.id} className="border-b border-white/5 hover:bg-white/5">
+                                                            <td className="px-4 py-3 whitespace-nowrap">{new Date(Number(log.createdAt) || log.createdAt).toLocaleString('tr-TR')}</td>
                                                             <td className="px-4 py-3 font-bold text-emerald-400">{log.action}</td>
                                                             <td className="px-4 py-3">{log.entity_type}</td>
-                                                            <td className="px-4 py-3 text-xs font-mono break-all">{JSON.stringify(log.metadata || {})}</td>
+                                                            <td className="px-4 py-3 text-xs font-mono break-all">{log.metadata || '{}'}</td>
                                                         </tr>
                                                     ))}
                                                     </tbody>
@@ -391,7 +447,7 @@ export default function AdminDashboardPage() {
                                                 <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_#10b981]"></div>
                                                 <div className="flex-1">
                                                     <h4 className="text-sm font-bold text-gray-200">@{u.userInfo?.username || 'Anonim'}</h4>
-                                                    <span className="text-[10px] text-gray-500 font-mono flex items-center gap-1"><Clock size={10}/> {new Date(u.connectedAt).toLocaleTimeString()}</span>
+                                                    <span className="text-[10px] text-gray-500 font-mono flex items-center gap-1"><Clock size={10}/> {new Date(Number(u.connectedAt) || u.connectedAt).toLocaleTimeString()}</span>
                                                 </div>
                                             </div>
                                         ))}
@@ -423,7 +479,6 @@ export default function AdminDashboardPage() {
 
                                             <div className="flex-1 overflow-y-auto space-y-4 pr-4 mb-6 custom-scrollbar">
                                                 {convDetails.messages.map((msg:any, index: number) => {
-                                                    // GÜVENLİK KATMANI: Eğer mesaj undefined ise boş renderla, patlama
                                                     if (!msg) return null;
 
                                                     return (

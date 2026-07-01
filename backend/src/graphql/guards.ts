@@ -18,3 +18,11 @@ export const checkStudentOnly = (context: GraphQLContext) => {
         throw new Error("FORBIDDEN: Bu işleme sadece doğrulanmış üniversite öğrencileri yetkilidir.");
     }
 };
+
+export const checkAdminOnly = (context: GraphQLContext) => {
+    checkAuth(context);
+
+    if (!context.user?.is_admin) {
+        throw new Error("FORBIDDEN: Bu işlemi gerçekleştirmek için Admin yetkisine sahip olmalısınız.");
+    }
+};

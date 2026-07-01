@@ -5,20 +5,54 @@ import { useRouter } from 'next/navigation';
 import { Search, MapPin, Filter, Clock, ChevronDown, ImageIcon, AlertCircle } from 'lucide-react';
 
 interface Advert {
-    _id: string;
+    _id: string; // UI bu şekilde beklediği için _id tutuyoruz
     title: string;
     price: number | string;
     category: string;
-    type: string; // 'urgent', 'secondhand', 'carpooling' vb.
+    type: string;
     location: string;
     createdAt: string;
     photos?: string[];
 }
 
+// MT NOT: Şemanda getFeedListings argüman almıyor görünüyordu. Filtrelerin backend'e
+// iletilmesi için şemandaki getListings'i kullandım.
+const GET_LISTINGS_QUERY = `
+  query GetListings($q: String, $category: String, $sort: String) {
+    getListings(q: $q, category: $category, sort: $sort) {
+      id
+      title
+      price
+      category
+      type
+      location
+      createdAt
+      photos
+    }
+  }
+`;
+
+// Eğer illaki parametresiz olan getFeedListings'i kullanacaksan query stringini bununla değiştir.
+/*
+const GET_FEED_LISTINGS_QUERY = `
+  query GetFeedListings {
+    getFeedListings {
+      id
+      title
+      price
+      category
+      type
+      location
+      createdAt
+      photos
+    }
+  }
+`;
+*/
+
 export default function FeedPage() {
     const router = useRouter();
 
-    // State management for filters, data and UI
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
     const [minPrice, setMinPrice] = useState('');
@@ -27,9 +61,8 @@ export default function FeedPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const API_URL = process.env.NEXT_PUBLIC_API_URL;
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
-    // Sorting states
     const [sortBy, setSortBy] = useState('newest');
     const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
 
@@ -40,7 +73,6 @@ export default function FeedPage() {
         { id: 'popular', label: 'En Popüler' }
     ];
 
-    // Backend'deki 7 Ana Kategori (Type bazlı veya alt kategori)
     const categoryOptions = [
         { id: 'secondhand', label: 'İkinci El Eşya' },
         { id: 'roommate', label: 'Ev / Oda Arkadaşı' },
@@ -65,40 +97,61 @@ export default function FeedPage() {
 
         try {
             const token = localStorage.getItem('accessToken');
-            if (!token) { router.push('/login'); return; }
-
-            const queryParams = new URLSearchParams();
-
-            if (searchQuery) queryParams.append('q', searchQuery);
-
-            if (selectedCategories.length > 0) {
-                queryParams.append('category', selectedCategories.join(','));
+            if (!token) {
+                router.push('/login');
+                return;
             }
 
-            if (minPrice) queryParams.append('min_price', minPrice);
-            if (maxPrice) queryParams.append('max_price', maxPrice);
-            queryParams.append('sort', sortBy);
-
-            const finalUrl = `${API_URL}/api/listing?${queryParams.toString()}`;
-
-            const response = await fetch(finalUrl, {
-                headers: { 'Authorization': `Bearer ${token}` }
+            // Doğrudan Fetch ile GraphQL isteği atıyoruz
+            const response = await fetch(`${API_URL}/graphql`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    query: GET_LISTINGS_QUERY,
+                    variables: {
+                        q: searchQuery || undefined,
+                        category: selectedCategories.length > 0 ? selectedCategories.join(',') : undefined,
+                        sort: sortBy
+                    }
+                })
             });
 
-            const data = await response.json();
+            const result = await response.json();
 
-            if (!response.ok) {
-                setError(data.message || 'İlanlar çekilirken bir hata oluştu.');
+            if (result.errors) {
+                setError(result.errors[0]?.message || 'İlanlar çekilirken bir hata oluştu.');
                 setAdverts([]);
                 return;
             }
 
-            const filteredListings = (data.listings || []).filter((ad: Advert) => ad.type !== 'urgent');
+            // İster getListings'den gelsin ister getFeedListings'den, güvenli yakalama
+            const fetchedData = result.data?.getListings || result.data?.getFeedListings || [];
 
-            setAdverts(filteredListings);
+            // UI'ın çökmemesi için dönen 'id' değerlerini '_id' formatına eşitliyoruz
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const formattedListings: Advert[] = fetchedData.map((item: any) => ({
+                ...item,
+                _id: item.id
+            }));
 
-        } catch (err: any) {
-            setError("İlanlar yüklenemedi.");
+            // 1. Backend'den dönenlerden "urgent" olanları ayıklıyoruz
+            const nonUrgentListings = formattedListings.filter((ad) => ad.type !== 'urgent');
+
+            // 2. Fiyat min/max işlemi şemada olmadığından JS ile frontend'de hallediyoruz
+            const finalFilteredListings = nonUrgentListings.filter(ad => {
+                const priceNum = Number(ad.price);
+                if (minPrice && priceNum < Number(minPrice)) return false;
+                if (maxPrice && priceNum > Number(maxPrice)) return false;
+                return true;
+            });
+
+            setAdverts(finalFilteredListings);
+
+        } catch (err) {
+            setError("İlanlar yüklenemedi. Ağ hatası.");
             setAdverts([]);
         } finally {
             setIsLoading(false);
@@ -109,17 +162,17 @@ export default function FeedPage() {
     useEffect(() => {
         const delayDebounceFn = setTimeout(() => {
             fetchAdverts();
-        }, 500); // Fiyat veya arama yazarken fazla istek gitmemesi için gecikme
+        }, 500);
 
         return () => clearTimeout(delayDebounceFn);
-    }, [searchQuery, sortBy, selectedCategories]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchQuery, sortBy, selectedCategories, minPrice, maxPrice]);
 
     const formatDate = (dateString: string) => {
         const options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' };
         return new Date(dateString).toLocaleDateString('tr-TR', options);
     };
 
-    // Kategori ismini okunabilir hale getiren yardımcı fonksiyon
     const getCategoryName = (advert: Advert) => {
         const found = categoryOptions.find(opt => opt.id === advert.type || opt.id === advert.category);
         return found ? found.label : (advert.category || advert.type || 'İlan');

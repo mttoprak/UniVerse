@@ -3,6 +3,7 @@ import { checkAuth } from "../guards";
 import bcrypt from "bcryptjs";
 import GraphQLJSON from "graphql-type-json";
 import { v2 as cloudinary } from "cloudinary";
+import {pubsub, SUBSCRIPTION_EVENTS} from "../../utils/pubsub.util";
 
 const generateCode = (): string =>
     Math.floor(100000 + Math.random() * 900000).toString();
@@ -419,6 +420,19 @@ export const userResolvers = {
                 apiKey: process.env.CLOUDINARY_API_KEY!,
                 folder
             };
+        }
+    },
+    Subscription: {
+        systemAnnouncement: {
+            subscribe: (_parent: any, _args: any, context: GraphQLContext) => {
+                // Sadece sisteme giriş yapmış (online) kullanıcıların dinleyebilmesi için güvenlik:
+                if (!context.userId) {
+                    throw new Error("Giriş yapmalısınız.");
+                }
+
+                // Filtre yok! Bu kanala abone olan HERKES publish edilen veriyi anında alır.
+                return pubsub.asyncIterableIterator(SUBSCRIPTION_EVENTS.SYSTEM_ANNOUNCEMENT);
+            }
         }
     }
 };

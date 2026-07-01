@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Package, Heart, Settings, Trash2, Edit3, ExternalLink, User, MapPin, Calendar, AlertTriangle, X, CheckCircle, Star, Mail, Phone, GraduationCap, Shield, Loader2, RefreshCw, Briefcase, Camera, FileText, Bookmark, Folder, FolderOpen } from 'lucide-react';
+import { Package, Heart, Settings, Trash2, Edit3, ExternalLink, User, Calendar, AlertTriangle, X, CheckCircle, Star, Mail, Phone, GraduationCap, Shield, Loader2, RefreshCw, Briefcase, Camera, FileText, Bookmark, Folder, FolderOpen } from 'lucide-react';
+
 interface Advert {
     _id: string;
     title: string;
@@ -25,6 +26,129 @@ const TYPE_MAP: Record<string, string> = {
     job: 'İş / Staj',
     scholarship: 'Burs'
 };
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+
+// --- GRAPHQL YARDIMCI FONKSİYONU ---
+async function fetchGraphQL(query: string, variables: any = {}) {
+    const token = localStorage.getItem('accessToken');
+    const response = await fetch(`${API_URL}/graphql`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ query, variables })
+    });
+
+    if (!response.ok) {
+        throw new Error(`API Hatası: ${response.status}`);
+    }
+
+    const result = await response.json();
+    if (result.errors) {
+        throw new Error(result.errors[0].message);
+    }
+    return result.data;
+}
+
+// --- GRAPHQL SORGULARI VE MUTASYONLARI ---
+const GET_INITIAL_DATA = `#graphql
+query GetInitialProfileData {
+    getMe {
+        _id: id
+        username email edu_email name surname birthdate telephone profile_photo
+        account_type auth_provider is_verified is_complete is_banned is_admin
+        university rating_sum rating_count createdAt
+    }
+    getMyListings {
+        _id: id
+        title description price type status is_deleted createdAt category photos
+        owner { username }
+    }
+}
+`;
+
+const GET_FAVORITES = `#graphql
+query GetMyFavorites {
+    getFavoriteListings {
+        _id: id title price photos type status is_deleted createdAt category
+        owner { username }
+    }
+}
+`;
+
+const GET_SAVED_COLLECTIONS = `#graphql
+query GetMySavedCollections {
+    getSavedListings
+}
+`;
+
+const DELETE_LISTING = `#graphql
+mutation DeleteListing($id: ID!) {
+    deleteListing(id: $id)
+}
+`;
+
+const UPDATE_LISTING = `#graphql
+mutation UpdateListing($id: ID!, $input: UpdateListingInput!) {
+    updateListing(id: $id, input: $input) {
+        _id: id title description price
+    }
+}
+`;
+
+const REPUBLISH_LISTING = `#graphql
+mutation RepublishListing($id: ID!) {
+    republishListing(id: $id) {
+        _id: id status is_deleted
+    }
+}
+`;
+
+const UPDATE_USER = `#graphql
+mutation UpdateUser($input: UpdateUserInput!) {
+    updateUser(input: $input) {
+        _id: id name surname username email telephone birthdate university
+    }
+}
+`;
+
+const GENERATE_SIGNATURE_USER = `#graphql
+mutation GenerateUploadSignatureUser($folderName: String!) {
+    generateUploadSignatureUser(folderName: $folderName) {
+        timestamp signature cloudName apiKey folder
+    }
+}
+`;
+
+const UPDATE_PROFILE_PHOTO = `#graphql
+mutation UpdateProfilePhoto($photoUrl: String!) {
+    updateProfilePhoto(photoUrl: $photoUrl)
+}
+`;
+
+const CHANGE_PASSWORD = `#graphql
+mutation ChangePassword($input: ChangePasswordInput!) {
+    changePassword(input: $input)
+}
+`;
+
+const REMOVE_FROM_SAVED = `#graphql
+mutation RemoveFromSaved($input: RemoveFromSavedInput!) {
+    removeFromSaved(input: $input) {
+        saved_listings
+    }
+}
+`;
+
+const TOGGLE_FAVORITE = `#graphql
+mutation ToggleFavorite($listingId: ID!) {
+    toggleFavorite(listingId: $listingId) {
+        favorited
+    }
+}
+`;
 
 export default function ProfilePage() {
     const router = useRouter();
@@ -52,119 +176,11 @@ export default function ProfilePage() {
 
     const [savedCollections, setSavedCollections] = useState<Record<string, any[]>>({});
 
-    const API_URL = process.env.NEXT_PUBLIC_API_URL;
-
-    // pull the users info
-    useEffect(() => {
-        const fetchInitialData = async () => {
-            const token = localStorage.getItem('accessToken');
-            if (!token) {
-                router.push('/login');
-                return;
-            }
-
-            try {
-                setPageLoading(true);
-                // 1. DÜZELTME: KULLANICI BİLGİLERİ İÇİN API_URL ENTEGRE EDİLDİ
-                const userRes = await fetch(`${API_URL}/api/auth/me`, {
-                    method: 'GET',
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const userDataJson = await userRes.json();
-                if (!userRes.ok) throw new Error(userDataJson.message);
-
-                const currentProfile = userDataJson.user || userDataJson;
-
-                if (currentProfile.birthdate) {
-                    currentProfile.birthdate = new Date(currentProfile.birthdate).toISOString().split('T')[0];
-                }
-                setUserData(currentProfile);
-
-                // pull the listings
-                const listingsRes = await fetch(`${API_URL}/api/listing/my-listings`, {
-                    method: 'GET',
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const listingsData = await listingsRes.json();
-
-                if (listingsRes.ok) {
-                    setMyAdverts(listingsData.listings || []);
-                }
-
-            } catch (err: any) {
-                console.error(err);
-                setToastMessage("Veriler yüklenirken bir sorun oluştu.");
-            } finally {
-                setPageLoading(false);
-            }
-        };
-
-        fetchInitialData();
-    }, [router, API_URL]);
-
-    // get favorites
-    useEffect(() => {
-        if (activeTab === 'favorites' && userData) {
-            const fetchFavorites = async () => {
-                const token = localStorage.getItem('accessToken');
-                try {
-                    setTabLoading(true);
-                    // 3. DÜZELTME: FAVORİLERİ ÇEKERKEN API_URL ENTEGRE EDİLDİ
-                    const res = await fetch(`${API_URL}/api/user/me/favorites`, {
-                        method: 'GET',
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    const data = await res.json();
-                    setMyFavorites(data.listings || data || []);
-                } catch (err) {
-                    console.error("Favoriler çekilemedi:", err);
-                } finally {
-                    setTabLoading(false);
-                }
-            };
-            fetchFavorites();
-        }
-    }, [activeTab, userData, API_URL]);
-
-    // get saved collections
-    useEffect(() => {
-        if (activeTab === 'saved' && userData) {
-            const fetchSavedCollections = async () => {
-                const token = localStorage.getItem('accessToken');
-                try {
-                    setTabLoading(true);
-                    const res = await fetch(`${API_URL}/api/user/me/saved`, {
-                        method: 'GET',
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    const data = await res.json();
-                    if (res.ok) setSavedCollections(data.saved_listings || {});
-                } catch (err) {
-                    console.error("Koleksiyonlar çekilemedi:", err);
-                } finally {
-                    setTabLoading(false);
-                }
-            };
-            fetchSavedCollections();
-        }
-    }, [activeTab, userData, API_URL]);
-
-    const handleRemoveFromSaved = async (listingId: string, listName: string) => {
-        const token = localStorage.getItem('accessToken');
-        try {
-            const res = await fetch(`${API_URL}/api/user/me/saved`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ listingId, listName })
-            });
-            const data = await res.json();
-            if (res.ok) {
-                setSavedCollections(data.saved_listings || {});
-                setToastMessage(`İlan '${listName}' koleksiyonundan çıkarıldı.`);
-            }
-        } catch (e) {
-            console.error(e);
-        }
+    // Güvenli Tarih Dönüştürme Yardımcısı (Timestamp string veya ISO string patlamasını önler)
+    const parseSafeDate = (dateStr: string | null | undefined): Date | null => {
+        if (!dateStr) return null;
+        const parsedDate = /^\d+$/.test(dateStr) ? new Date(Number(dateStr)) : new Date(dateStr);
+        return !isNaN(parsedDate.getTime()) ? parsedDate : null;
     };
 
     useEffect(() => {
@@ -174,205 +190,229 @@ export default function ProfilePage() {
         }
     }, [toastMessage]);
 
-    // delete
+    // 1. Profil ve İlan Verilerini Tek Seferde Çekme
+    useEffect(() => {
+        const fetchInitialData = async () => {
+            if (!localStorage.getItem('accessToken')) {
+                router.push('/login');
+                return;
+            }
+
+            try {
+                setPageLoading(true);
+                const data = await fetchGraphQL(GET_INITIAL_DATA);
+                const profile = data.getMe;
+
+                if (profile && profile.birthdate) {
+                    const validBirthdate = parseSafeDate(profile.birthdate);
+                    profile.birthdate = validBirthdate ? validBirthdate.toISOString().split('T')[0] : "";
+                }
+
+                setUserData(profile);
+                setMyAdverts(data.getMyListings || []);
+            } catch (err: any) {
+                console.log(err);
+                setToastMessage(err.message || "Veriler yüklenirken bir sorun oluştu.");
+            } finally {
+                setPageLoading(false);
+            }
+        };
+
+        fetchInitialData();
+    }, [router]);
+
+    // 2. Favorileri Çekme
+    useEffect(() => {
+        if (activeTab === 'favorites' && userData) {
+            const fetchFavorites = async () => {
+                try {
+                    setTabLoading(true);
+                    const data = await fetchGraphQL(GET_FAVORITES);
+                    setMyFavorites(data.getFavoriteListings || []);
+                } catch (err) {
+                    console.log("Favoriler çekilemedi:", err);
+                } finally {
+                    setTabLoading(false);
+                }
+            };
+            fetchFavorites();
+        }
+    }, [activeTab, userData]);
+
+    // 3. Koleksiyonları Çekme
+    useEffect(() => {
+        if (activeTab === 'saved' && userData) {
+            const fetchSavedCollections = async () => {
+                try {
+                    setTabLoading(true);
+                    const data = await fetchGraphQL(GET_SAVED_COLLECTIONS);
+                    setSavedCollections(data.getSavedListings || {});
+                } catch (err) {
+                    console.log("Koleksiyonlar çekilemedi:", err);
+                } finally {
+                    setTabLoading(false);
+                }
+            };
+            fetchSavedCollections();
+        }
+    }, [activeTab, userData]);
+
+    const handleRemoveFromSaved = async (listingId: string, listName: string) => {
+        try {
+            const data = await fetchGraphQL(REMOVE_FROM_SAVED, {
+                input: { listingId, listName }
+            });
+            setSavedCollections(data.removeFromSaved.saved_listings || {});
+            setToastMessage(`İlan '${listName}' koleksiyonundan çıkarıldı.`);
+        } catch (e: any) {
+            console.log(e);
+            setToastMessage(e.message || 'Koleksiyondan çıkarma başarısız oldu.');
+        }
+    };
+
+    // İlan Silme
     const confirmDelete = (id: string) => { setItemToDelete(id); setDeleteModalOpen(true); };
     const executeDelete = async () => {
         if (!itemToDelete) return;
-        const token = localStorage.getItem('accessToken');
         try {
-            // 4. DÜZELTME: İLAN SİLERKEN API_URL ENTEGRE EDİLDİ
-            const response = await fetch(`${API_URL}/api/listing/${itemToDelete}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (response.ok) {
-                setMyAdverts(prev => prev.filter(ad => ad._id !== itemToDelete));
-                setToastMessage('İlan veritabanından kalıcı olarak silindi.');
-            } else {
-                setToastMessage('İlan silinemedi.');
-            }
-        } catch (e) {
-            setToastMessage('Bağlantı hatası oluştu.');
+            await fetchGraphQL(DELETE_LISTING, { id: itemToDelete });
+            setMyAdverts(prev => prev.filter(ad => ad._id !== itemToDelete));
+            setToastMessage('İlan veritabanından kalıcı olarak silindi.');
+        } catch (e: any) {
+            setToastMessage(e.message || 'İlan silinemedi.');
         } finally {
             setDeleteModalOpen(false);
             setItemToDelete(null);
         }
     };
 
-    // update
+    // İlan Düzenleme
     const openEditModal = (advert: any) => { setItemToEdit({ ...advert }); setEditModalOpen(true); };
     const saveEdit = async () => {
         if (!itemToEdit) return;
-        const token = localStorage.getItem('accessToken');
         try {
-            // 5. DÜZELTME: İLAN DÜZENLERKEN API_URL ENTEGRE EDİLDİ
-            const response = await fetch(`${API_URL}/api/listing/${itemToEdit._id}`, {
-                method: 'PATCH',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
+            const data = await fetchGraphQL(UPDATE_LISTING, {
+                id: itemToEdit._id,
+                input: {
                     title: itemToEdit.title,
                     description: itemToEdit.description,
                     price: Number(itemToEdit.price)
-                })
+                }
             });
 
-            if (response.ok) {
-                setMyAdverts(prev => prev.map(ad => ad._id === itemToEdit._id ? { ...ad, title: itemToEdit.title, description: itemToEdit.description, price: itemToEdit.price } : ad));
-                setToastMessage('İlan güncellendi.');
-            } else {
-                setToastMessage('Güncelleme başarısız oldu.');
-            }
-        } catch (e) {
-            setToastMessage('Bağlantı hatası.');
+            const updatedAd = data.updateListing;
+            setMyAdverts(prev => prev.map(ad => ad._id === updatedAd._id ? { ...ad, title: updatedAd.title, description: updatedAd.description, price: updatedAd.price } : ad));
+            setToastMessage('İlan güncellendi.');
+        } catch (e: any) {
+            setToastMessage(e.message || 'Güncelleme başarısız oldu.');
         } finally {
             setEditModalOpen(false);
             setItemToEdit(null);
         }
     };
 
-    // republish listing
+    // Yeniden Yayınlama
     const handleRepublish = async (id: string) => {
-        const token = localStorage.getItem('accessToken');
         try {
-            const response = await fetch(`${API_URL}/api/listing/${id}/republish`, {
-                method: 'PATCH',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await response.json();
-
-            if (response.ok) {
-                setToastMessage(data.message || 'İlan başarıyla yeniden yayınlandı.');
-                setMyAdverts(prev => prev.map(ad =>
-                    ad._id === id ? { ...ad, status: 'active', is_deleted: false } : ad
-                ));
-            } else {
-                setToastMessage(data.error || 'Yeniden yayınlama başarısız oldu.');
-            }
-        } catch (e) {
-            setToastMessage('Bağlantı hatası oluştu.');
+            await fetchGraphQL(REPUBLISH_LISTING, { id });
+            setToastMessage('İlan başarıyla yeniden yayınlandı.');
+            setMyAdverts(prev => prev.map(ad =>
+                ad._id === id ? { ...ad, status: 'active', is_deleted: false } : ad
+            ));
+        } catch (e: any) {
+            setToastMessage(e.message || 'Yeniden yayınlama başarısız oldu.');
         }
     };
 
-    // profile update
+    // Profil Ayarları Güncelleme
     const handleProfileUpdate = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
-        const token = localStorage.getItem('accessToken');
 
         try {
-            const payload: any = {
+            const input: any = {
                 name: userData.name,
                 surname: userData.surname,
                 username: userData.username,
-                email: userData.email,
-                telephone: userData.telephone,
-                birthdate: userData.birthdate ? new Date(userData.birthdate).toISOString() : null,
-                university: userData.university
+                telephone: userData.telephone
             };
 
-            const response = await fetch(`${API_URL}/api/user/me`, {
-                method: 'PATCH',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(payload)
-            });
-
-            if (response.ok) {
-                setToastMessage('Profil verileriniz başarıyla güncellendi.');
-                setNewPassword('');
-            } else {
-                const errData = await response.json();
-                setToastMessage(errData.message || 'Güncelleme başarısız.');
-            }
-        } catch (err) {
-            setToastMessage('Sunucuyla iletişim kurulamadı.');
+            await fetchGraphQL(UPDATE_USER, { input });
+            setToastMessage('Profil verileriniz başarıyla güncellendi.');
+        } catch (err: any) {
+            setToastMessage(err.message || 'Sunucuyla iletişim kurulamadı.');
         } finally {
             setIsSubmitting(false);
         }
     };
 
-    // profile photo update
+    // Profil Fotoğrafı Cloudinary Entegrasyonu
     const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        const token = localStorage.getItem('accessToken');
-        const formData = new FormData();
-        formData.append('profile_photo', file);
-
         setIsUploadingPhoto(true);
         try {
-            const response = await fetch(`${API_URL}/api/user/me/profile-photo`, {
-                method: 'PATCH',
-                headers: { 'Authorization': `Bearer ${token}` },
+            const sigData = await fetchGraphQL(GENERATE_SIGNATURE_USER, { folderName: 'profile_photos' });
+            const { signature, timestamp, cloudName, apiKey, folder } = sigData.generateUploadSignatureUser;
+
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("api_key", apiKey);
+            formData.append("timestamp", timestamp.toString());
+            formData.append("signature", signature);
+            formData.append("folder", folder);
+
+            const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+                method: "POST",
                 body: formData
             });
-            const data = await response.json();
+            const cloudinaryResponse = await uploadRes.json();
 
-            if (response.ok) {
-                setUserData({ ...userData, profile_photo: data.profile_photo });
-                setToastMessage(data.message || 'Profil fotoğrafınız güncellendi.');
-            } else {
-                setToastMessage(data.error || 'Fotoğraf yüklenemedi.');
-            }
-        } catch (err) {
-            setToastMessage('Bağlantı hatası.');
+            if (!uploadRes.ok) throw new Error("Cloudinary yükleme hatası");
+
+            const updateData = await fetchGraphQL(UPDATE_PROFILE_PHOTO, { photoUrl: cloudinaryResponse.secure_url });
+
+            setUserData({ ...userData, profile_photo: cloudinaryResponse.secure_url });
+            setToastMessage(updateData.updateProfilePhoto || 'Profil fotoğrafınız güncellendi.');
+        } catch (err: any) {
+            console.log(err);
+            setToastMessage(err.message || 'Fotoğraf yüklenemedi.');
         } finally {
             setIsUploadingPhoto(false);
         }
     };
 
-    // password update
+    // Şifre Değiştirme
     const handlePasswordChange = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newPassword) return;
 
-        const token = localStorage.getItem('accessToken');
         setIsChangingPassword(true);
         try {
-            const response = await fetch(`${API_URL}/api/user/me/change-password`, {
-                method: 'PATCH',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ oldPassword, newPassword })
+            const data = await fetchGraphQL(CHANGE_PASSWORD, {
+                input: { oldPassword, newPassword }
             });
-            const data = await response.json();
 
-            if (response.ok) {
-                setToastMessage(data.message || 'Şifreniz güncellendi.');
-                setOldPassword('');
-                setNewPassword('');
-            } else {
-                setToastMessage(data.error || 'Şifre güncellenemedi.');
-            }
-        } catch (err) {
-            setToastMessage('Bağlantı hatası.');
+            setToastMessage(data.changePassword || 'Şifreniz güncellendi.');
+            setOldPassword('');
+            setNewPassword('');
+        } catch (err: any) {
+            setToastMessage(err.message || 'Şifre güncellenemedi.');
         } finally {
             setIsChangingPassword(false);
         }
     };
 
+    // Favori Durumu Değiştirme
     const handleRemoveFavorite = async (listingId: string) => {
-        const token = localStorage.getItem('accessToken');
         try {
-            // 7. DÜZELTME: FAVORİLERDEN KALDIRIRKEN API_URL ENTEGRE EDİLDİ
-            const res = await fetch(`${API_URL}/api/user/me/favorites/${listingId}`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                setMyFavorites(prev => prev.filter(fav => fav._id !== listingId));
-                setToastMessage('Favorilerden kaldırıldı.');
-            }
-        } catch (e) {
-            console.error(e);
+            await fetchGraphQL(TOGGLE_FAVORITE, { listingId });
+            setMyFavorites(prev => prev.filter(fav => fav._id !== listingId));
+            setToastMessage('Favorilerden kaldırıldı.');
+        } catch (e: any) {
+            console.log(e);
+            setToastMessage(e.message || 'İşlem başarısız.');
         }
     };
 
@@ -388,12 +428,13 @@ export default function ProfilePage() {
     if (!userData) return null;
 
     const userRating = userData.rating_count > 0 ? (userData.rating_sum / userData.rating_count).toFixed(1) : "0.0";
-    const joinYear = userData.createdAt ? new Date(userData.createdAt).getFullYear() : 2026;
+
+    const validCreatedAt = parseSafeDate(userData.createdAt);
+    const joinYear = validCreatedAt ? validCreatedAt.getFullYear() : 2026;
 
     return (
         <div className="min-h-screen pt-24 pb-12 px-4 md:px-8 max-w-6xl mx-auto flex flex-col relative text-gray-100">
 
-            {/* toast notification */}
             {toastMessage && (
                 <div className="fixed bottom-6 right-6 z-[9999] animate-in slide-in-from-bottom-5 fade-in duration-300 flex items-center gap-3 bg-cyan-900/90 border border-cyan-500/50 backdrop-blur-md px-5 py-3 rounded-2xl shadow-[0_0_20px_rgba(34,211,238,0.2)]">
                     <CheckCircle className="text-cyan-400" size={20} />
@@ -401,7 +442,6 @@ export default function ProfilePage() {
                 </div>
             )}
 
-            {/* delete modal */}
             {deleteModalOpen && (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
                     <div className="bg-[#0B0F19] border border-rose-500/30 rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
@@ -416,7 +456,6 @@ export default function ProfilePage() {
                 </div>
             )}
 
-            {/* edit modal */}
             {editModalOpen && itemToEdit && (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
                     <div className="bg-[#0B0F19] border border-cyan-500/30 rounded-3xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden">
@@ -443,7 +482,6 @@ export default function ProfilePage() {
                 </div>
             )}
 
-            {/* top section: profile card */}
             <div className="bg-[#0B0F19]/80 backdrop-blur-xl border border-white/10 rounded-3xl overflow-hidden mb-8">
                 <div className="h-32 md:h-48 w-full bg-gradient-to-r from-cyan-900/40 via-blue-900/40 to-rose-900/40 relative">
                     <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20 mix-blend-overlay"></div>
@@ -458,7 +496,6 @@ export default function ProfilePage() {
                                 <span className="text-4xl font-black text-white">{userData.name?.charAt(0)}{userData.surname?.charAt(0)}</span>
                             )}
 
-                            {/* HOVER EFEKTİ VE DOSYA SEÇİCİ */}
                             <label className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-20 backdrop-blur-sm">
                                 {isUploadingPhoto ? (
                                     <Loader2 className="animate-spin text-cyan-400" size={28} />
@@ -500,7 +537,6 @@ export default function ProfilePage() {
                 </div>
             </div>
 
-            {/* bottom section */}
             <div className="flex flex-col md:flex-row gap-8">
 
                 <div className="w-full md:w-72 flex flex-col gap-2">
@@ -535,77 +571,79 @@ export default function ProfilePage() {
                             {myAdverts.length === 0 ? (
                                 <p className="text-sm text-gray-500">Henüz yayınlanmış bir ilanınız bulunmuyor.</p>
                             ) : (
-                                myAdverts.map((advert) => (
-                                    <div key={advert._id} className="group bg-white/5 border border-white/10 rounded-2xl p-5 hover:border-cyan-500/30 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                myAdverts.map((advert) => {
+                                    const adDate = parseSafeDate(advert.createdAt);
+                                    return (
+                                        <div key={advert._id} className="group bg-white/5 border border-white/10 rounded-2xl p-5 hover:border-cyan-500/30 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4">
 
-                                        {/* TIKLANABİLİR ALAN: Fotoğraf ve Başlık Yan Yana */}
-                                        <div
-                                            className="flex items-center gap-4 cursor-pointer flex-1"
-                                            onClick={() => router.push(`/listings/${advert._id}`)}
-                                        >
-                                            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-[#0B0F19] border border-white/10 overflow-hidden flex-shrink-0 flex items-center justify-center">
-                                                {advert.photos && advert.photos.length > 0 ? (
-                                                    <img src={advert.photos[0]} alt={advert.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-                                                ) : (
-                                                    <Package size={24} className="text-gray-600" />
-                                                )}
+                                            <div
+                                                className="flex items-center gap-4 cursor-pointer flex-1"
+                                                onClick={() => router.push(`/listings/${advert._id}`)}
+                                            >
+                                                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-[#0B0F19] border border-white/10 overflow-hidden flex-shrink-0 flex items-center justify-center">
+                                                    {advert.photos && advert.photos.length > 0 ? (
+                                                        <img src={advert.photos[0]} alt={advert.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                                                    ) : (
+                                                        <Package size={24} className="text-gray-600" />
+                                                    )}
+                                                </div>
+
+                                                <div>
+                                                    <h3 className="font-bold text-lg text-gray-100 group-hover:text-cyan-400 transition-colors line-clamp-1">{advert.title}</h3>
+                                                    <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-2 text-[10px] sm:text-xs font-medium text-gray-500">
+                                                        <span className="bg-white/5 px-2 py-1 rounded-md uppercase text-cyan-400">
+                                                            {TYPE_MAP[advert.type || ''] || advert.category || 'Genel'}
+                                                        </span>
+
+                                                        {advert.is_deleted ? (
+                                                            <span className="bg-rose-500/20 px-2 py-1 rounded-md uppercase text-rose-400 font-bold">Silindi</span>
+                                                        ) : advert.status === 'expired' ? (
+                                                            <span className="bg-amber-500/20 px-2 py-1 rounded-md uppercase text-amber-400 font-bold">Süresi Doldu</span>
+                                                        ) : advert.status === 'sold' ? (
+                                                            <span className="bg-blue-500/20 px-2 py-1 rounded-md uppercase text-blue-400 font-bold">Satıldı</span>
+                                                        ) : (
+                                                            <span className="bg-emerald-500/20 px-2 py-1 rounded-md uppercase text-emerald-400 font-bold">Aktif</span>
+                                                        )}
+
+                                                        <span className="flex items-center gap-1">
+                                                            <Calendar size={12}/> {adDate ? adDate.toLocaleDateString('tr-TR') : ''}
+                                                        </span>
+                                                    </div>
+                                                </div>
                                             </div>
 
-                                            <div>
-                                                <h3 className="font-bold text-lg text-gray-100 group-hover:text-cyan-400 transition-colors line-clamp-1">{advert.title}</h3>
-                                                <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-2 text-[10px] sm:text-xs font-medium text-gray-500">
-                                                    <span className="bg-white/5 px-2 py-1 rounded-md uppercase text-cyan-400">
-                                                        {TYPE_MAP[advert.type || ''] || advert.category || 'Genel'}
-                                                    </span>
+                                            <div className="flex items-center justify-between md:justify-end gap-4 w-full md:w-auto mt-4 md:mt-0 pt-4 md:pt-0 border-t border-white/10 md:border-0 shrink-0">
+                                                <span className="text-xl font-black text-emerald-400">₺{advert.price}</span>
+                                                <div className="flex items-center gap-2">
 
-                                                    {/* DOĞRUDAN STATUS BİLGİSİNE GÖRE ETİKET */}
-                                                    {advert.is_deleted ? (
-                                                        <span className="bg-rose-500/20 px-2 py-1 rounded-md uppercase text-rose-400 font-bold">Silindi</span>
-                                                    ) : advert.status === 'expired' ? (
-                                                        <span className="bg-amber-500/20 px-2 py-1 rounded-md uppercase text-amber-400 font-bold">Süresi Doldu</span>
-                                                    ) : advert.status === 'sold' ? (
-                                                        <span className="bg-blue-500/20 px-2 py-1 rounded-md uppercase text-blue-400 font-bold">Satıldı</span>
-                                                    ) : (
-                                                        <span className="bg-emerald-500/20 px-2 py-1 rounded-md uppercase text-emerald-400 font-bold">Aktif</span>
+                                                    {(advert.type === 'job' || advert.type === 'scholarship') && (
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); router.push(`/listings/${advert._id}/applications`); }}
+                                                            title="Gelen Başvurular"
+                                                            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-violet-500/10 text-violet-400 hover:bg-violet-500 hover:text-white font-bold transition-all shadow-[0_0_10px_rgba(124,58,237,0.1)]"
+                                                        >
+                                                            <FileText size={18} /> <span className="hidden sm:inline">Başvurular</span>
+                                                        </button>
                                                     )}
 
-                                                    <span className="flex items-center gap-1"><Calendar size={12}/> {new Date(advert.createdAt).toLocaleDateString('tr-TR')}</span>
+                                                    {(advert.status === 'expired' && !advert.is_deleted) && (
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); handleRepublish(advert._id); }}
+                                                            title="Yeniden Yayınla"
+                                                            className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-white transition-all shadow-[0_0_10px_rgba(16,185,129,0.1)]"
+                                                        >
+                                                            <RefreshCw size={18} />
+                                                        </button>
+                                                    )}
+
+                                                    <button onClick={(e) => { e.stopPropagation(); openEditModal(advert); }} className="p-2.5 rounded-xl bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white transition-all"><Edit3 size={18} /></button>
+                                                    <button onClick={(e) => { e.stopPropagation(); confirmDelete(advert._id); }} className="p-2.5 rounded-xl bg-rose-500/10 text-rose-400 hover:bg-rose-500 hover:text-white transition-all"><Trash2 size={18} /></button>
+                                                    <button onClick={(e) => { e.stopPropagation(); router.push(`/listings/${advert._id}`); }} className="p-2.5 rounded-xl bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500 hover:text-white transition-all hidden sm:block"><ExternalLink size={18} /></button>
                                                 </div>
                                             </div>
                                         </div>
-
-                                        <div className="flex items-center justify-between md:justify-end gap-4 w-full md:w-auto mt-4 md:mt-0 pt-4 md:pt-0 border-t border-white/10 md:border-0 shrink-0">
-                                            <span className="text-xl font-black text-emerald-400">₺{advert.price}</span>
-                                            <div className="flex items-center gap-2">
-
-                                                {/* YENİ: SADECE İŞ VE BURS İLANLARINDA GÖZÜKEN BAŞVURULAR BUTONU */}
-                                                {(advert.type === 'job' || advert.type === 'scholarship') && (
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); router.push(`/listings/${advert._id}/applications`); }}
-                                                        title="Gelen Başvurular"
-                                                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-violet-500/10 text-violet-400 hover:bg-violet-500 hover:text-white font-bold transition-all shadow-[0_0_10px_rgba(124,58,237,0.1)]"
-                                                    >
-                                                        <FileText size={18} /> <span className="hidden sm:inline">Başvurular</span>
-                                                    </button>
-                                                )}
-
-                                                {(advert.status === 'expired' && !advert.is_deleted) && (
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); handleRepublish(advert._id); }}
-                                                        title="Yeniden Yayınla"
-                                                        className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-white transition-all shadow-[0_0_10px_rgba(16,185,129,0.1)]"
-                                                    >
-                                                        <RefreshCw size={18} />
-                                                    </button>
-                                                )}
-
-                                                <button onClick={(e) => { e.stopPropagation(); openEditModal(advert); }} className="p-2.5 rounded-xl bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white transition-all"><Edit3 size={18} /></button>
-                                                <button onClick={(e) => { e.stopPropagation(); confirmDelete(advert._id); }} className="p-2.5 rounded-xl bg-rose-500/10 text-rose-400 hover:bg-rose-500 hover:text-white transition-all"><Trash2 size={18} /></button>
-                                                <button onClick={(e) => { e.stopPropagation(); router.push(`/listings/${advert._id}`); }} className="p-2.5 rounded-xl bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500 hover:text-white transition-all hidden sm:block"><ExternalLink size={18} /></button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))
+                                    );
+                                })
                             )}
                         </div>
                     )}
@@ -621,7 +659,6 @@ export default function ProfilePage() {
                                 myFavorites.map((fav) => (
                                     <div key={fav._id} className="group bg-white/5 border border-white/10 rounded-2xl p-5 hover:border-rose-500/30 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4">
 
-                                        {/* YENİ EKLENEN KISIM: Fotoğraf ve Başlık Yan Yana */}
                                         <div className="flex items-center gap-4">
                                             <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-[#0B0F19] border border-white/10 overflow-hidden flex-shrink-0 flex items-center justify-center">
                                                 {fav.photos && fav.photos.length > 0 ? (
@@ -639,7 +676,6 @@ export default function ProfilePage() {
                                             </div>
                                         </div>
 
-                                        {/* Fiyat ve Butonlar (Aynı Kaldı) */}
                                         <div className="flex items-center justify-between md:justify-end gap-6 w-full md:w-auto mt-4 md:mt-0 pt-4 md:pt-0 border-t border-white/10 md:border-0">
                                             <span className="text-xl font-black text-emerald-400">₺{fav.price}</span>
                                             <div className="flex items-center gap-2">
@@ -801,7 +837,6 @@ export default function ProfilePage() {
                                         <Shield size={16} /> Güvenlik (Şifre Değiştirme)
                                     </h3>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        {/* Eğer kullanıcının zaten bir şifresi varsa eski şifreyi sor (hasExistingPassword mantığı) */}
                                         {userData.password !== false && (
                                             <div>
                                                 <label className="block text-xs font-semibold text-gray-400 mb-1.5">Mevcut Şifreniz</label>
@@ -823,7 +858,6 @@ export default function ProfilePage() {
                         </div>
                     )}
                 </div>
-
             </div>
         </div>
     );

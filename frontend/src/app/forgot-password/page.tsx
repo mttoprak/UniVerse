@@ -5,6 +5,60 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Mail, ArrowLeft, KeyRound, Loader2, CheckCircle, ShieldAlert, Lock, AlertCircle } from 'lucide-react';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
+// --- GRAPHQL YARDIMCI FONKSİYONU ---
+async function fetchGraphQL(query: string, variables: any = {}) {
+    const response = await fetch(`${API_URL}/graphql`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query, variables })
+    });
+
+    if (!response.ok) {
+        throw new Error(`API Hatası: ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    // GraphQL standart hata formatını yakala
+    if (result.errors && result.errors.length > 0) {
+        throw new Error(result.errors[0].message);
+    }
+
+    return result.data;
+}
+
+// --- GRAPHQL MUTASYONLARI (TypeDefs'e göre güncellendi) ---
+const FORGOT_PASSWORD = `#graphql
+    mutation ForgotPassword($input: ForgotPasswordInput!) {
+        forgotPassword(input: $input) {
+            success
+            message
+        }
+    }
+`;
+
+const VERIFY_RESET_CODE = `#graphql
+    mutation VerifyResetCode($input: VerifyResetCodeInput!) {
+        verifyResetCode(input: $input) {
+            success
+            message
+        }
+    }
+`;
+
+const RESET_PASSWORD = `#graphql
+    mutation ResetPassword($input: ResetPasswordInput!) {
+        resetPassword(input: $input) {
+            token
+            is_complete
+        }
+    }
+`;
+
 export default function ForgotPasswordPage() {
     const router = useRouter();
 
@@ -16,22 +70,6 @@ export default function ForgotPasswordPage() {
     const [code, setCode] = useState('');
     const [newPassword, setNewPassword] = useState('');
 
-    const API_URL = process.env.NEXT_PUBLIC_API_URL;
-
-    const safeParse = async (response: Response) => {
-        const text = await response.text();
-        try {
-            return JSON.parse(text);
-        } catch (e) {
-            let extractedError = "Sunucu JSON yerine HTML/Bilinmeyen format döndürdü.";
-            if (text.includes("Cannot POST") || text.includes("Cannot GET")) {
-                const match = text.match(/Cannot (POST|GET) \/[a-zA-Z0-9/_-]+/);
-                if (match) extractedError = `Yanlış Endpoint: ${match[0]}`;
-            }
-            throw new Error(extractedError);
-        }
-    };
-
     const handleSendCode = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!identifier) return;
@@ -40,20 +78,13 @@ export default function ForgotPasswordPage() {
         setError(null);
 
         try {
-            const response = await fetch(`${API_URL}/api/auth/forgot-password`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ usernameOrEmail: identifier })
+            // Parametreleri 'input' objesi içine sarıyoruz
+            await fetchGraphQL(FORGOT_PASSWORD, {
+                input: { usernameOrEmail: identifier }
             });
-
-            if (response.ok || response.status === 200) {
-                setStep(2);
-            } else {
-                const data = await safeParse(response);
-                throw new Error(data.message || 'Kod gönderilirken bir hata oluştu.');
-            }
+            setStep(2);
         } catch (err: any) {
-            setError(err.message);
+            setError(err.message || 'Kod gönderilirken bir hata oluştu.');
         } finally {
             setIsSubmitting(false);
         }
@@ -70,20 +101,12 @@ export default function ForgotPasswordPage() {
         setError(null);
 
         try {
-            const response = await fetch(`${API_URL}/api/auth/verify-reset-code`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: identifier, code: code })
+            await fetchGraphQL(VERIFY_RESET_CODE, {
+                input: { email: identifier, code: code }
             });
-
-            if (!response.ok) {
-                const data = await safeParse(response);
-                throw new Error(data.message || 'Kod hatalı veya süresi dolmuş.');
-            }
-
             setStep(3);
         } catch (err: any) {
-            setError(err.message);
+            setError(err.message || 'Kod hatalı veya süresi dolmuş.');
         } finally {
             setIsSubmitting(false);
         }
@@ -100,30 +123,24 @@ export default function ForgotPasswordPage() {
         setError(null);
 
         try {
-            const response = await fetch(`${API_URL}/api/auth/reset-password`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: identifier, code: code, password: newPassword })
+            const data = await fetchGraphQL(RESET_PASSWORD, {
+                input: {
+                    email: identifier,
+                    code: code,
+                    password: newPassword
+                }
             });
 
-            const data = await safeParse(response);
-
-            if (!response.ok) {
-                if (data.errors?.properties?.password) {
-                    throw new Error(data.errors.properties.password.errors[0]);
-                }
-                throw new Error(data.message || 'Şifre sıfırlanamadı.');
-            }
-
-            if (data.accessToken) {
-                localStorage.setItem('accessToken', data.accessToken);
+            // accessToken yerine schema'ndaki 'token' alanını okuyoruz
+            if (data.resetPassword && data.resetPassword.token) {
+                localStorage.setItem('accessToken', data.resetPassword.token);
                 window.dispatchEvent(new Event('auth_status_changed'));
                 router.push('/feed');
             } else {
                 router.push('/login');
             }
         } catch (err: any) {
-            setError(err.message);
+            setError(err.message || 'Şifre sıfırlanamadı.');
         } finally {
             setIsSubmitting(false);
         }

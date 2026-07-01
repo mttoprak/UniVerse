@@ -3,11 +3,47 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import {
-    ChevronLeft, MapPin, Clock, User, ShieldCheck,
-    Loader2, AlertTriangle, Send, Zap, GraduationCap
-} from 'lucide-react';
+import { ChevronLeft, MapPin, Clock, User, Loader2, AlertTriangle, Send, Zap, GraduationCap } from 'lucide-react';
 import CountdownTimer from "@/components/CountdownTimer";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
+async function fetchGraphQL(query: string, variables: any = {}) {
+    const token = localStorage.getItem('accessToken');
+    const response = await fetch(`${API_URL}/graphql`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ query, variables })
+    });
+
+    if (!response.ok) throw new Error(`API Hatası: ${response.status}`);
+    const result = await response.json();
+    if (result.errors) throw new Error(result.errors[0].message);
+    return result.data;
+}
+
+const GET_EMERGENCY_DETAIL = `#graphql
+query GetEmergencyDetail($id: ID!) {
+    getListing(id: $id) {
+        _id: id
+        title
+        description
+        location
+        createdAt
+        expires
+        type
+        owner {
+            _id: id
+            username
+            profile_photo
+            account_type
+        }
+    }
+}
+`;
 
 export default function EmergencyDetailPage() {
     const params = useParams();
@@ -17,8 +53,6 @@ export default function EmergencyDetailPage() {
     const [ad, setAd] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://universe-1-vdkr.onrender.com';
 
     useEffect(() => {
         const fetchEmergencyDetails = async () => {
@@ -31,20 +65,11 @@ export default function EmergencyDetailPage() {
                     return;
                 }
 
-                const response = await fetch(`${API_URL}/api/listing/${id}`, {
-                    method: 'GET',
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
+                const data = await fetchGraphQL(GET_EMERGENCY_DETAIL, { id });
+                const listingData = data.getListing;
 
-                if (!response.ok) {
-                    const errData = await response.json().catch(() => ({}));
-                    throw new Error(errData.message || 'Acil ilan bulunamadı.');
-                }
+                if (!listingData) throw new Error('Acil ilan bulunamadı.');
 
-                const data = await response.json();
-                const listingData = data.listing || data.data || data;
-
-                // Eğer yanlışlıkla normal bir ilan buraya yönlendirildiyse geri yolla
                 if (listingData.type !== 'urgent') {
                     router.replace(`/listings/${id}`);
                     return;
@@ -59,21 +84,11 @@ export default function EmergencyDetailPage() {
         };
 
         fetchEmergencyDetails();
-    }, [id, router, API_URL]);
+    }, [id, router]);
 
     const handlePrimaryAction = () => {
         router.push(`/messages?listingId=${id}`);
     };
-
-    // Bitiş süresini hesapla
-    const getExpiresAt = () => {
-        if (!ad || !ad.expires || isNaN(Number(ad.expires))) return null;
-        const createdAt = new Date(ad.createdAt);
-        if (isNaN(createdAt.getTime())) return null;
-        return new Date(createdAt.getTime() + (Number(ad.expires) * 60 * 60 * 1000)).toISOString();
-    };
-
-    const expiresAt = getExpiresAt();
 
     if (isLoading) {
         return (
@@ -97,11 +112,12 @@ export default function EmergencyDetailPage() {
         );
     }
 
-    const seller = ad.owner || ad.seller;
+    const seller = ad.owner;
+    // ARTIK HESAPLAMA YOK: Direkt veritabanındaki ISO string'i sayaca veriyoruz
+    const expiresAt = ad.expires;
 
     return (
         <div className="min-h-screen pt-28 pb-12 px-4 relative">
-            {/* Arka plan kırmızı tehlike ışığı efekti */}
             <style dangerouslySetInnerHTML={{ __html: `
                 @keyframes heartbeat { 0%, 100% { opacity: 0.15; transform: scale(1); } 50% { opacity: 0.25; transform: scale(1.05); } }
                 .animate-heartbeat { animation: heartbeat 3s infinite ease-in-out; }
@@ -111,7 +127,6 @@ export default function EmergencyDetailPage() {
             </div>
 
             <div className="max-w-3xl mx-auto mt-4">
-                {/* Geri Dön Butonu */}
                 <div className="flex items-center justify-between mb-8">
                     <Link href="/emergencies-feed" className="flex items-center space-x-2 text-gray-400 hover:text-rose-400 transition-colors group">
                         <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center group-hover:border-rose-500/50 transition-colors">
@@ -121,10 +136,7 @@ export default function EmergencyDetailPage() {
                     </Link>
                 </div>
 
-                {/* Ana İçerik */}
                 <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
-
-                    {/* Üst Kırmızı Banner ve Sayaç */}
                     <div className="bg-rose-500/10 border border-rose-500/30 rounded-3xl p-6 md:p-8 flex flex-col md:flex-row items-center justify-between shadow-[0_0_40px_rgba(244,63,94,0.15)] relative overflow-hidden">
                         <div className="absolute top-0 right-0 w-32 h-32 bg-rose-500/20 blur-3xl"></div>
                         <div className="flex items-center gap-5 mb-6 md:mb-0 relative z-10">
@@ -139,17 +151,13 @@ export default function EmergencyDetailPage() {
                         <div className="text-center md:text-right relative z-10 bg-black/40 px-4 py-3 rounded-2xl border border-rose-500/20">
                             <p className="text-gray-400 text-[10px] uppercase font-black tracking-widest mb-1.5">Kalan Süre</p>
                             {expiresAt ? (
-                                <CountdownTimer
-                                    expiresAt={expiresAt}
-                                    onComplete={() => router.push('/emergencies-feed')}
-                                />
+                                <CountdownTimer expiresAt={expiresAt} onComplete={() => router.push('/emergencies-feed')} />
                             ) : (
                                 <span className="text-gray-500 text-sm">Bilinmiyor</span>
                             )}
                         </div>
                     </div>
 
-                    {/* Detay Kartı */}
                     <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-[0_10px_30px_rgba(0,0,0,0.2)]">
                         <h2 className="text-3xl font-black text-white leading-tight mb-6">{ad.title}</h2>
 
@@ -160,7 +168,7 @@ export default function EmergencyDetailPage() {
                             </div>
                             <div className="flex items-center text-sm text-gray-400">
                                 <Clock size={16} className="mr-2 text-rose-500/60" />
-                                <span>{new Date(ad.createdAt).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                                <span>{new Date(Number(ad.createdAt) || ad.createdAt).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' })}</span>
                             </div>
                         </div>
 
@@ -170,12 +178,11 @@ export default function EmergencyDetailPage() {
                             </div>
                         )}
 
-                        {/* Kullanıcı Bilgisi */}
                         {seller && (
                             <div className="bg-gradient-to-r from-rose-950/20 to-transparent border border-rose-500/10 rounded-2xl p-4 mb-8 flex items-center space-x-4">
                                 <div className="w-14 h-14 rounded-full overflow-hidden bg-rose-500/20 border border-rose-500/50 flex items-center justify-center flex-shrink-0">
-                                    {seller.avatar || seller.profile_photo ? (
-                                        <img src={seller.avatar || seller.profile_photo} alt={seller.username} className="w-full h-full object-cover" />
+                                    {seller.profile_photo ? (
+                                        <img src={seller.profile_photo} alt={seller.username} className="w-full h-full object-cover" />
                                     ) : (
                                         <User size={24} className="text-rose-400" />
                                     )}
@@ -195,13 +202,11 @@ export default function EmergencyDetailPage() {
                             </div>
                         )}
 
-                        {/* Aksiyon Butonu */}
                         <button
                             onClick={handlePrimaryAction}
                             className="w-full py-5 rounded-2xl font-black text-lg transition-all flex items-center justify-center gap-3 bg-rose-600 hover:bg-rose-500 text-white shadow-[0_0_20px_rgba(225,29,72,0.4)] hover:shadow-[0_0_30px_rgba(225,29,72,0.6)] hover:-translate-y-1">
                             <Send size={24} /> Hemen Yardıma Koş
                         </button>
-                        <p className="text-center text-xs text-gray-500 mt-4">Tıkladığınızda mesajlaşma ekranına yönlendirileceksiniz.</p>
                     </div>
                 </div>
             </div>

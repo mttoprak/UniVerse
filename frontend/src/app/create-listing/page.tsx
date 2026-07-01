@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation';
 import { GoogleMap, useJsApiLoader, Marker, Autocomplete } from '@react-google-maps/api';
 import {
     Briefcase, Car, Lock, ArrowRight, ArrowLeft,
-    CheckCircle2, ImagePlus, TurkishLira, Calendar, MapPin,
-    FileText, Award, Presentation, ShoppingBag, Home, Plus, X, Eye,
+    CheckCircle2, ImagePlus, TurkishLira, MapPin,
+    FileText, Award, Presentation, ShoppingBag, Home, X, Eye,
     AlertTriangle, Link as LinkIcon, ListPlus, Tag, Map, Search, Clock
 } from 'lucide-react';
 
@@ -51,28 +51,64 @@ const PRESET_SECONDHAND_FEATURES = [
 
 interface DynamicField { id: string; key: string; value: string; isCustom: boolean; }
 
-// React Hook'larının tekrar tekrar tetiklenmesini engellemek için dışarıda tanımlanmalı
 const LIBRARIES: ("places")[] = ["places"];
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
+async function fetchGraphQL(query: string, variables: any = {}) {
+    const token = localStorage.getItem('accessToken');
+    const response = await fetch(`${API_URL}/graphql`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ query, variables })
+    });
+
+    if (!response.ok) throw new Error(`API Hatası: ${response.status}`);
+    const result = await response.json();
+    if (result.errors) throw new Error(result.errors[0].message);
+    return result.data;
+}
+
+const CHECK_AUTH = `#graphql
+query CheckAuth { getMe { account_type edu_email } }
+`;
+
+const GENERATE_SIGNATURE = `#graphql
+mutation GenerateSignature($folderName: String!) {
+    generateUploadSignature(folderName: $folderName) {
+        timestamp
+        signature
+        cloudName
+        apiKey
+        folder
+    }
+}
+`;
+
+const CREATE_LISTING = `#graphql
+mutation CreateListing($input: CreateListingInput!) {
+    createListing(input: $input) { id }
+}
+`;
 
 export default function CreateListingWizard() {
     const router = useRouter();
 
-    // ─── GOOGLE MAPS SETUP ───
     const { isLoaded } = useJsApiLoader({
         id: 'google-map-script',
         googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '',
-        libraries: LIBRARIES // Arama (Places) eklentisi dahil edildi
+        libraries: LIBRARIES
     });
 
-    const defaultMapCenter = { lat: 38.4237, lng: 27.1428 }; // İzmir Merkez
+    const defaultMapCenter = { lat: 38.4237, lng: 27.1428 };
 
     const [generalLocation, setGeneralLocation] = useState<{lat: number, lng: number} | null>(null);
     const [originCoords, setOriginCoords] = useState<{lat: number, lng: number} | null>(null);
     const [destCoords, setDestCoords] = useState<{lat: number, lng: number} | null>(null);
     const [carpoolMarkerType, setCarpoolMarkerType] = useState<'origin' | 'dest'>('origin');
     const [showMap, setShowMap] = useState(false);
-
-    // Arama Çubuğu Ref'i
     const [autocompleteInfo, setAutocompleteInfo] = useState<google.maps.places.Autocomplete | null>(null);
 
     const [step, setStep] = useState(1);
@@ -107,54 +143,43 @@ export default function CreateListingWizard() {
     const [currentFeatureValue, setCurrentFeatureValue] = useState('');
     const [customFeatureKeyInput, setCustomFeatureKeyInput] = useState('');
 
-    const API_URL = process.env.NEXT_PUBLIC_API_URL;
-
     useEffect(() => {
         const checkAuth = async () => {
-            const token = localStorage.getItem('accessToken');
-            if (!token) return;
             try {
-                const userRes = await fetch(`${API_URL}/api/auth/me`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const data = await userRes.json();
-                if (userRes.ok) setIsVerifiedStudent(data.user?.account_type === 'student' || !!data.user?.edu_email || data.account_type === 'student');
+                const data = await fetchGraphQL(CHECK_AUTH);
+                if (data.getMe) {
+                    setIsVerifiedStudent(data.getMe.account_type === 'student' || !!data.getMe.edu_email);
+                }
             } catch (error) { console.error("Auth Hata:", error); }
         };
         checkAuth();
     }, []);
 
+    const GET_DISTRICTS = `#graphql
+    query GetDistricts($il: String!) {
+        getDistricts(il: $il)
+    }
+`;
+
     useEffect(() => {
         const fetchDistricts = async () => {
             if (!selectedCityId) return setDistricts([]);
-
             try {
-                const token = localStorage.getItem('accessToken');
-
-                const res = await fetch(`${API_URL}/api/misc/districts/${selectedCityId}`, {
-                    method: 'GET',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-
-                if (res.ok) {
-                    const data = await res.json();
-                    setDistricts(data);
+                // Şehir ID'sini (selectedCityId) kullanarak ilçeleri GraphQL'den çek
+                const data = await fetchGraphQL(GET_DISTRICTS, { il: selectedCityId });
+                if (data.getDistricts) {
+                    setDistricts(data.getDistricts);
                 } else {
-                    console.error("İlçeler çekilemedi. Hata kodu:", res.status);
                     setDistricts([]);
                 }
             } catch (error) {
-                console.error("İlçe Hata:", error);
+                console.error("İlçeler çekilemedi:", error);
                 setDistricts([]);
             }
         };
         fetchDistricts();
     }, [selectedCityId]);
 
-    // ─── HARİTADA YER ARAMA FONKSİYONU ───
     const onLoadAutocomplete = (autocomplete: google.maps.places.Autocomplete) => {
         setAutocompleteInfo(autocomplete);
     };
@@ -166,7 +191,6 @@ export default function CreateListingWizard() {
                 const newLat = place.geometry.location.lat();
                 const newLng = place.geometry.location.lng();
 
-                // Seçilen kategorinin haritasına göre hedef state'i güncelle
                 if (selectedCat === 'carpool') {
                     if (carpoolMarkerType === 'origin') {
                         setOriginCoords({ lat: newLat, lng: newLng });
@@ -186,7 +210,7 @@ export default function CreateListingWizard() {
         let finalKey = currentCriterionKey === 'Kendi Kriterini Ekle' ? customCriterionKeyInput.trim() : currentCriterionKey;
         let finalValue = currentCriterionValue.trim();
         if (!finalKey || !finalValue) return;
-        if (criteriaList.some(c => c.key === finalKey)) { alert('Bu kriteri zaten eklediniz.'); return; }
+        if (criteriaList.some(c => c.key === finalKey)) return alert('Bu kriteri zaten eklediniz.');
         setCriteriaList(prev => [...prev, { id: Date.now().toString(), key: finalKey, value: finalValue, isCustom: currentCriterionKey === 'Kendi Kriterini Ekle' }]);
         setCurrentCriterionKey(''); setCurrentCriterionValue(''); setCustomCriterionKeyInput('');
     };
@@ -196,7 +220,7 @@ export default function CreateListingWizard() {
         let finalKey = currentFeatureKey === 'Kendi Özelliğini Ekle' ? customFeatureKeyInput.trim() : currentFeatureKey;
         let finalValue = currentFeatureValue.trim();
         if (!finalKey || !finalValue) return;
-        if (featuresList.some(c => c.key === finalKey)) { alert('Bu özelliği zaten eklediniz.'); return; }
+        if (featuresList.some(c => c.key === finalKey)) return alert('Bu özelliği zaten eklediniz.');
         setFeaturesList(prev => [...prev, { id: Date.now().toString(), key: finalKey, value: finalValue, isCustom: currentFeatureKey === 'Kendi Özelliğini Ekle' }]);
         setCurrentFeatureKey(''); setCurrentFeatureValue(''); setCustomFeatureKeyInput('');
     };
@@ -248,20 +272,13 @@ export default function CreateListingWizard() {
     const submitListing = async () => {
         setIsSubmitting(true); setSubmitStatus('idle'); setSubmitError(null);
         try {
-            const token = localStorage.getItem('accessToken');
-            if (!token) throw new Error('Oturum bulunamadı. Lütfen giriş yapın.');
-
-            const submitData = new FormData();
+            // 1. Kategori Düzenleme
             let schemaType = selectedCat;
             if (selectedCat === 'carpool') schemaType = 'carpooling';
             if (selectedCat === 'tutoring' || selectedCat === 'notes') schemaType = 'course';
-            if (selectedCat === 'notes') schemaType = 'secondhand';
+            if (selectedCat === 'notes') schemaType = 'note';
 
-            submitData.append('type', schemaType || 'secondhand');
-            submitData.append('title', formData.title);
-            submitData.append('description', formData.description);
-            submitData.append('price', formData.price || '0');
-
+            // 2. Lokasyon Düzenleme
             let finalLocation = 'Kampüs İçi';
             if (city && district) {
                 finalLocation = `${district}, ${city}`;
@@ -270,47 +287,81 @@ export default function CreateListingWizard() {
                 }
             } else if (schemaType === 'carpooling') {
                 let o = formData.origin;
-                if (originCoords) {
-                    o += ` (Harita: https://maps.google.com/?q=${originCoords.lat},${originCoords.lng})`;
-                }
-
+                if (originCoords) o += ` (Harita: https://maps.google.com/?q=${originCoords.lat},${originCoords.lng})`;
                 let d = formData.destination;
-                if (destCoords) {
-                    d += ` (Harita: https://maps.google.com/?q=${destCoords.lat},${destCoords.lng})`;
-                }
-
+                if (destCoords) d += ` (Harita: https://maps.google.com/?q=${destCoords.lat},${destCoords.lng})`;
                 finalLocation = `${formData.origin} -> ${formData.destination}`;
-
-                submitData.append('origin', o);
-                submitData.append('destination', d);
-                submitData.append('departure_date', new Date(formData.departure_date).toISOString());
-                submitData.append('available_seats', formData.available_seats);
+                // Input objesine ayrıca eklenecek
             }
 
-            submitData.append('location', finalLocation);
+            // 3. Özellikler ve Kriterler
+            const featuresObj: any = {};
+            featuresList.forEach(f => featuresObj[f.key] = f.value);
 
-            featuresList.forEach(feature => submitData.append(`features[${feature.key}]`, feature.value));
+            const criteriaObj: any = {};
+            criteriaList.forEach(c => criteriaObj[c.key] = c.value);
+
+            // 4. Cloudinary Upload Logic
+            const uploadedPhotoUrls: string[] = [];
+            if (mediaFiles.length > 0) {
+                const sigData = await fetchGraphQL(GENERATE_SIGNATURE, { folderName: 'universe/listings' });
+                const { timestamp, signature, cloudName, apiKey, folder } = sigData.generateUploadSignature;
+
+                for (const file of mediaFiles) {
+                    const uploadDataForm = new FormData();
+                    uploadDataForm.append('file', file);
+                    uploadDataForm.append('api_key', apiKey);
+                    uploadDataForm.append('timestamp', String(timestamp));
+                    uploadDataForm.append('signature', signature);
+                    uploadDataForm.append('folder', folder);
+
+                    const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+                        method: 'POST',
+                        body: uploadDataForm
+                    });
+
+                    if (!uploadRes.ok) throw new Error("Fotoğraf yüklenemedi.");
+                    const uploadData = await uploadRes.json();
+                    uploadedPhotoUrls.push(uploadData.secure_url);
+                }
+            }
+
+            // 5. GraphQL Input Objesi Hazırlama
+            const input: any = {
+                type: schemaType,
+                title: formData.title,
+                description: formData.description,
+                price: parseFloat(formData.price || '0'),
+                location: finalLocation,
+                photos: uploadedPhotoUrls
+            };
+
+            if (Object.keys(featuresObj).length > 0) input.features = featuresObj;
+            if (Object.keys(criteriaObj).length > 0) input.criteria = criteriaObj;
 
             if (schemaType === 'secondhand') {
-                submitData.append('condition', formData.condition);
-                submitData.append('category', selectedCat === 'notes' ? 'textbooks_and_notes' : formData.secondhandCategory);
-                if (formData.subcategory) submitData.append('subcategory', formData.subcategory);
-            } else if (schemaType === 'roommate') {
-                criteriaList.forEach(criterion => submitData.append(`criteria[${criterion.key}]`, criterion.value));
-            } else if (schemaType === 'course') {
-                submitData.append('subject', formData.subject);
-                submitData.append('format', formData.format);
+                input.condition = formData.condition;
+                input.category = formData.secondhandCategory;
+                if (formData.subcategory) input.subcategory = formData.subcategory;
+            } else if (schemaType === 'course' || schemaType === 'note') {
+                input.subject = formData.subject;
+                input.format = formData.format;
+                if (schemaType === 'note') {
+                    input.subcategory = formData.subcategory;
+                    input.condition = formData.condition;
+                }
             } else if (schemaType === 'job' || schemaType === 'scholarship') {
-                if (formData.application_url) submitData.append('application_url', formData.application_url);
-                if (formData.deadline) submitData.append('deadline', new Date(formData.deadline).toISOString());
+                if (formData.application_url) input.application_url = formData.application_url;
+                if (formData.deadline) input.deadline = new Date(formData.deadline).toISOString();
+            } else if (schemaType === 'carpooling') {
+                input.origin = formData.origin;
+                input.destination = formData.destination;
+                input.departure_date = new Date(formData.departure_date).toISOString();
+                input.available_seats = parseInt(formData.available_seats, 10);
             }
 
-            mediaFiles.forEach(file => submitData.append('photos', file));
-
-            const response = await fetch(`${API_URL}/api/listing`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: submitData });
-            const text = await response.text();
-            let data; try { data = JSON.parse(text); } catch (e) { throw new Error(`Sunucu Hatası.`); }
-            if (!response.ok) throw new Error(data.message || data.error || 'İlan oluşturulurken hata oluştu.');
+            // 6. İlanı Oluştur
+            await fetchGraphQL(CREATE_LISTING, { input });
 
             setSubmitStatus('success');
             setTimeout(() => { router.push('/feed'); }, 2000);
@@ -352,17 +403,12 @@ export default function CreateListingWizard() {
                 <div className="bg-black/40 border border-white/10 rounded-2xl p-4 animate-in fade-in zoom-in-95 duration-300">
                     <p className="text-xs text-gray-400 mb-3">İlanını vereceğin yerin konumunu seç veya arama kutusuna yazarak haritayı oraya kaydır.</p>
 
-                    {/* YENİ: ARAMA ÇUBUĞU */}
                     {isLoaded && (
                         <div className="mb-4 relative">
                             <Autocomplete onLoad={onLoadAutocomplete} onPlaceChanged={onPlaceChanged}>
                                 <div className="relative">
                                     <Search className="absolute left-3 top-3 text-gray-400" size={18} />
-                                    <input
-                                        type="text"
-                                        placeholder="Mekan veya adres ara (Örn: Buca Metro)"
-                                        className="w-full bg-black/60 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-sm outline-none text-white focus:border-cyan-500/50"
-                                    />
+                                    <input type="text" placeholder="Mekan veya adres ara (Örn: Buca Metro)" className="w-full bg-black/60 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-sm outline-none text-white focus:border-cyan-500/50" />
                                 </div>
                             </Autocomplete>
                         </div>
@@ -370,13 +416,7 @@ export default function CreateListingWizard() {
 
                     {isLoaded ? (
                         <div className="rounded-xl overflow-hidden border border-white/10 h-[250px] relative">
-                            <GoogleMap
-                                mapContainerStyle={{ width: '100%', height: '100%' }}
-                                center={generalLocation || defaultMapCenter}
-                                zoom={generalLocation ? 15 : 12}
-                                onClick={(e) => setGeneralLocation({ lat: e.latLng!.lat(), lng: e.latLng!.lng() })}
-                                options={{ mapTypeControl: false, streetViewControl: false, fullscreenControl: false }}
-                            >
+                            <GoogleMap mapContainerStyle={{ width: '100%', height: '100%' }} center={generalLocation || defaultMapCenter} zoom={generalLocation ? 15 : 12} onClick={(e) => setGeneralLocation({ lat: e.latLng!.lat(), lng: e.latLng!.lng() })} options={{ mapTypeControl: false, streetViewControl: false, fullscreenControl: false }}>
                                 {generalLocation && <Marker position={generalLocation} />}
                             </GoogleMap>
                         </div>
@@ -459,7 +499,6 @@ export default function CreateListingWizard() {
                             <input type="text" value={formData.title} onChange={(e) => handleFormChange('title', e.target.value)} placeholder="İlanını özetleyen bir başlık" className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 focus:border-cyan-500/50 outline-none text-gray-200" />
                         </div>
 
-                        {/* JOB & SCHOLARSHIP */}
                         {(selectedCat === 'job' || selectedCat === 'scholarship') && (
                             <div className={`space-y-4 animate-in zoom-in-95 duration-300 border-l-2 pl-4 ${selectedCat === 'job' ? 'border-blue-500' : 'border-yellow-500'}`}>
                                 {selectedCat === 'job' && renderLocationWithMap('text-blue-400')}
@@ -479,7 +518,6 @@ export default function CreateListingWizard() {
                             </div>
                         )}
 
-                        {/* CARPOOL */}
                         {selectedCat === 'carpool' && (
                             <div className="space-y-6 border-l-2 border-emerald-500 pl-4 animate-in zoom-in-95 duration-300">
                                 <div className="grid grid-cols-2 gap-4">
@@ -507,33 +545,16 @@ export default function CreateListingWizard() {
                                     <label className="text-sm font-bold text-emerald-400 mb-3 flex items-center gap-2"><MapPin size={16}/> Rotayı Haritada İşaretle (Opsiyonel)</label>
 
                                     <div className="flex gap-2 mb-4">
-                                        <button
-                                            type="button"
-                                            onClick={() => setCarpoolMarkerType('origin')}
-                                            className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${carpoolMarkerType === 'origin' ? 'bg-emerald-500 text-black shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'bg-white/5 text-gray-400 hover:bg-white/10'}`}
-                                        >
-                                            1. Kalkış Noktası {originCoords && '✓'}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setCarpoolMarkerType('dest')}
-                                            className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${carpoolMarkerType === 'dest' ? 'bg-blue-500 text-white shadow-[0_0_15px_rgba(59,130,246,0.3)]' : 'bg-white/5 text-gray-400 hover:bg-white/10'}`}
-                                        >
-                                            2. Varış Noktası {destCoords && '✓'}
-                                        </button>
+                                        <button type="button" onClick={() => setCarpoolMarkerType('origin')} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${carpoolMarkerType === 'origin' ? 'bg-emerald-500 text-black shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'bg-white/5 text-gray-400 hover:bg-white/10'}`}>1. Kalkış Noktası {originCoords && '✓'}</button>
+                                        <button type="button" onClick={() => setCarpoolMarkerType('dest')} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${carpoolMarkerType === 'dest' ? 'bg-blue-500 text-white shadow-[0_0_15px_rgba(59,130,246,0.3)]' : 'bg-white/5 text-gray-400 hover:bg-white/10'}`}>2. Varış Noktası {destCoords && '✓'}</button>
                                     </div>
 
-                                    {/* YENİ: CARPOOL ARAMA ÇUBUĞU */}
                                     {isLoaded && (
                                         <div className="mb-4">
                                             <Autocomplete onLoad={onLoadAutocomplete} onPlaceChanged={onPlaceChanged}>
                                                 <div className="relative">
                                                     <Search className="absolute left-3 top-3 text-gray-400" size={18} />
-                                                    <input
-                                                        type="text"
-                                                        placeholder={carpoolMarkerType === 'origin' ? "Kalkış noktasını ara (Örn: Buca)" : "Varış noktasını ara (Örn: Bornova)"}
-                                                        className="w-full bg-black/60 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-sm outline-none text-white focus:border-emerald-500/50"
-                                                    />
+                                                    <input type="text" placeholder={carpoolMarkerType === 'origin' ? "Kalkış noktasını ara (Örn: Buca)" : "Varış noktasını ara (Örn: Bornova)"} className="w-full bg-black/60 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-sm outline-none text-white focus:border-emerald-500/50" />
                                                 </div>
                                             </Autocomplete>
                                         </div>
@@ -544,16 +565,7 @@ export default function CreateListingWizard() {
                                             <div className="absolute top-2 left-2 z-10 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 text-xs text-white font-medium">
                                                 Şu an {carpoolMarkerType === 'origin' ? <span className="text-emerald-400 font-bold">Kalkış</span> : <span className="text-blue-400 font-bold">Varış</span>} noktasını seçiyorsunuz.
                                             </div>
-                                            <GoogleMap
-                                                mapContainerStyle={{ width: '100%', height: '100%' }}
-                                                center={carpoolMarkerType === 'origin' && originCoords ? originCoords : carpoolMarkerType === 'dest' && destCoords ? destCoords : defaultMapCenter}
-                                                zoom={originCoords || destCoords ? 15 : 12}
-                                                onClick={(e) => {
-                                                    if (carpoolMarkerType === 'origin') setOriginCoords({ lat: e.latLng!.lat(), lng: e.latLng!.lng() });
-                                                    else setDestCoords({ lat: e.latLng!.lat(), lng: e.latLng!.lng() });
-                                                }}
-                                                options={{ mapTypeControl: false, streetViewControl: false, fullscreenControl: false }}
-                                            >
+                                            <GoogleMap mapContainerStyle={{ width: '100%', height: '100%' }} center={carpoolMarkerType === 'origin' && originCoords ? originCoords : carpoolMarkerType === 'dest' && destCoords ? destCoords : defaultMapCenter} zoom={originCoords || destCoords ? 15 : 12} onClick={(e) => { if (carpoolMarkerType === 'origin') setOriginCoords({ lat: e.latLng!.lat(), lng: e.latLng!.lng() }); else setDestCoords({ lat: e.latLng!.lat(), lng: e.latLng!.lng() }); }} options={{ mapTypeControl: false, streetViewControl: false, fullscreenControl: false }}>
                                                 {originCoords && <Marker position={originCoords} label={{text: "A", color: "white", fontWeight: "bold"}} />}
                                                 {destCoords && <Marker position={destCoords} label={{text: "B", color: "white", fontWeight: "bold"}} />}
                                             </GoogleMap>
@@ -565,7 +577,6 @@ export default function CreateListingWizard() {
                             </div>
                         )}
 
-                        {/* ROOMMATE */}
                         {selectedCat === 'roommate' && (
                             <div className="space-y-6 animate-in zoom-in-95 duration-300 border-l-2 border-teal-500 pl-4">
                                 <div className="space-y-2">
@@ -581,10 +592,7 @@ export default function CreateListingWizard() {
                                     <div className="flex flex-col sm:flex-row gap-3 items-end bg-white/5 p-4 rounded-xl border border-white/10">
                                         <div className="w-full sm:w-1/3 space-y-1">
                                             <label className="text-xs text-gray-400">Özellik Seç <span className="text-rose-500">*</span></label>
-                                            <select
-                                                value={currentFeatureKey} onChange={(e) => { setCurrentFeatureKey(e.target.value); setCurrentFeatureValue(''); }}
-                                                className="w-full bg-black/40 border border-white/10 rounded-lg py-2.5 px-3 text-sm focus:border-teal-500/50 outline-none text-gray-200 appearance-none"
-                                            >
+                                            <select value={currentFeatureKey} onChange={(e) => { setCurrentFeatureKey(e.target.value); setCurrentFeatureValue(''); }} className="w-full bg-black/40 border border-white/10 rounded-lg py-2.5 px-3 text-sm focus:border-teal-500/50 outline-none text-gray-200 appearance-none">
                                                 <option value="" className="bg-gray-900">Özellik Seç...</option>
                                                 {PRESET_ROOMMATE_FEATURES.map(c => <option key={c.key} value={c.key} className="bg-gray-900">{c.key}</option>)}
                                             </select>
@@ -615,9 +623,7 @@ export default function CreateListingWizard() {
                                                 </>
                                             )}
                                         </div>
-                                        <button onClick={handleAddFeature} disabled={!currentFeatureKey || (currentFeatureKey === 'Kendi Özelliğini Ekle' && (!customFeatureKeyInput || !currentFeatureValue)) || (currentFeatureKey !== 'Kendi Özelliğini Ekle' && !currentFeatureValue)}
-                                                className="px-4 py-2.5 bg-teal-500 hover:bg-teal-400 disabled:bg-gray-700 disabled:text-gray-500 text-black font-bold rounded-lg text-sm transition-colors flex-shrink-0"
-                                        >Ekle</button>
+                                        <button onClick={handleAddFeature} disabled={!currentFeatureKey || (currentFeatureKey === 'Kendi Özelliğini Ekle' && (!customFeatureKeyInput || !currentFeatureValue)) || (currentFeatureKey !== 'Kendi Özelliğini Ekle' && !currentFeatureValue)} className="px-4 py-2.5 bg-teal-500 hover:bg-teal-400 disabled:bg-gray-700 disabled:text-gray-500 text-black font-bold rounded-lg text-sm transition-colors flex-shrink-0">Ekle</button>
                                     </div>
                                     {featuresList.length > 0 && (
                                         <div className="flex flex-wrap gap-2 mt-4">
@@ -642,10 +648,7 @@ export default function CreateListingWizard() {
                                     <div className="flex flex-col sm:flex-row gap-3 items-end bg-white/5 p-4 rounded-xl border border-white/10">
                                         <div className="w-full sm:w-1/3 space-y-1">
                                             <label className="text-xs text-gray-400">Kriter Seç <span className="text-rose-500">*</span></label>
-                                            <select
-                                                value={currentCriterionKey} onChange={(e) => { setCurrentCriterionKey(e.target.value); setCurrentCriterionValue(''); }}
-                                                className="w-full bg-black/40 border border-white/10 rounded-lg py-2.5 px-3 text-sm focus:border-teal-500/50 outline-none text-gray-200 appearance-none"
-                                            >
+                                            <select value={currentCriterionKey} onChange={(e) => { setCurrentCriterionKey(e.target.value); setCurrentCriterionValue(''); }} className="w-full bg-black/40 border border-white/10 rounded-lg py-2.5 px-3 text-sm focus:border-teal-500/50 outline-none text-gray-200 appearance-none">
                                                 <option value="" className="bg-gray-900">Kriter Seç...</option>
                                                 {PRESET_CRITERIA.map(c => <option key={c.key} value={c.key} className="bg-gray-900">{c.key}</option>)}
                                             </select>
@@ -676,9 +679,7 @@ export default function CreateListingWizard() {
                                                 </>
                                             )}
                                         </div>
-                                        <button onClick={handleAddCriterion} disabled={!currentCriterionKey || (currentCriterionKey === 'Kendi Kriterini Ekle' && (!customCriterionKeyInput || !currentCriterionValue)) || (currentCriterionKey !== 'Kendi Kriterini Ekle' && !currentCriterionValue)}
-                                                className="px-4 py-2.5 bg-teal-500 hover:bg-teal-400 disabled:bg-gray-700 disabled:text-gray-500 text-black font-bold rounded-lg text-sm transition-colors flex-shrink-0"
-                                        >Ekle</button>
+                                        <button onClick={handleAddCriterion} disabled={!currentCriterionKey || (currentCriterionKey === 'Kendi Kriterini Ekle' && (!customCriterionKeyInput || !currentCriterionValue)) || (currentCriterionKey !== 'Kendi Kriterini Ekle' && !currentCriterionValue)} className="px-4 py-2.5 bg-teal-500 hover:bg-teal-400 disabled:bg-gray-700 disabled:text-gray-500 text-black font-bold rounded-lg text-sm transition-colors flex-shrink-0">Ekle</button>
                                     </div>
                                     {criteriaList.length > 0 && (
                                         <div className="flex flex-wrap gap-2 mt-4">
@@ -697,7 +698,6 @@ export default function CreateListingWizard() {
                             </div>
                         )}
 
-                        {/* COURSE */}
                         {selectedCat === 'tutoring' && (
                             <div className="grid grid-cols-2 gap-4 animate-in zoom-in-95 duration-300 border-l-2 border-indigo-500 pl-4">
                                 <div className="space-y-2">
@@ -715,7 +715,6 @@ export default function CreateListingWizard() {
                             </div>
                         )}
 
-                        {/* NOTES & SECONDHAND */}
                         {(selectedCat === 'notes' || selectedCat === 'secondhand') && (
                             <div className="space-y-6 animate-in zoom-in-95 duration-300 border-l-2 border-violet-500 pl-4">
                                 {selectedCat === 'secondhand' && (
@@ -754,7 +753,6 @@ export default function CreateListingWizard() {
                                     </select>
                                 </div>
 
-                                {/* secondhand features */}
                                 {selectedCat === 'secondhand' && (
                                     <div className="pt-4 border-t border-white/10 space-y-4">
                                         <div>
@@ -764,10 +762,7 @@ export default function CreateListingWizard() {
                                         <div className="flex flex-col sm:flex-row gap-3 items-end bg-white/5 p-4 rounded-xl border border-white/10">
                                             <div className="w-full sm:w-1/3 space-y-1">
                                                 <label className="text-xs text-gray-400">Özellik Seç <span className="text-rose-500">*</span></label>
-                                                <select
-                                                    value={currentFeatureKey} onChange={(e) => { setCurrentFeatureKey(e.target.value); setCurrentFeatureValue(''); }}
-                                                    className="w-full bg-black/40 border border-white/10 rounded-lg py-2.5 px-3 text-sm focus:border-violet-500/50 outline-none text-gray-200 appearance-none"
-                                                >
+                                                <select value={currentFeatureKey} onChange={(e) => { setCurrentFeatureKey(e.target.value); setCurrentFeatureValue(''); }} className="w-full bg-black/40 border border-white/10 rounded-lg py-2.5 px-3 text-sm focus:border-violet-500/50 outline-none text-gray-200 appearance-none">
                                                     <option value="" className="bg-gray-900">Özellik Seç...</option>
                                                     {PRESET_SECONDHAND_FEATURES.map(c => <option key={c.key} value={c.key} className="bg-gray-900">{c.key}</option>)}
                                                 </select>
@@ -798,9 +793,7 @@ export default function CreateListingWizard() {
                                                     </>
                                                 )}
                                             </div>
-                                            <button onClick={handleAddFeature} disabled={!currentFeatureKey || (currentFeatureKey === 'Kendi Özelliğini Ekle' && (!customFeatureKeyInput || !currentFeatureValue)) || (currentFeatureKey !== 'Kendi Özelliğini Ekle' && !currentFeatureValue)}
-                                                    className="px-4 py-2.5 bg-violet-500 hover:bg-violet-400 disabled:bg-gray-700 disabled:text-gray-500 text-black font-bold rounded-lg text-sm transition-colors flex-shrink-0"
-                                            >Ekle</button>
+                                            <button onClick={handleAddFeature} disabled={!currentFeatureKey || (currentFeatureKey === 'Kendi Özelliğini Ekle' && (!customFeatureKeyInput || !currentFeatureValue)) || (currentFeatureKey !== 'Kendi Özelliğini Ekle' && !currentFeatureValue)} className="px-4 py-2.5 bg-violet-500 hover:bg-violet-400 disabled:bg-gray-700 disabled:text-gray-500 text-black font-bold rounded-lg text-sm transition-colors flex-shrink-0">Ekle</button>
                                         </div>
                                         {featuresList.length > 0 && (
                                             <div className="flex flex-wrap gap-2 mt-4">
@@ -866,25 +859,16 @@ export default function CreateListingWizard() {
                             <span className="text-sm text-gray-500">İlanınız akışta tam olarak böyle görünecek.</span>
                         </div>
 
-                        {/* GERÇEKÇİ İLAN KARTI ÖNİZLEMESİ */}
                         <div className="max-w-sm mx-auto bg-white/5 backdrop-blur-md border border-white/10 hover:border-cyan-500/30 rounded-2xl overflow-hidden transition-all shadow-[0_10px_30px_rgba(0,0,0,0.5)] flex flex-col relative group">
-
-                            {/* 1. Görsel Alanı */}
                             <div className="w-full h-56 bg-black/40 relative overflow-hidden flex items-center justify-center border-b border-white/5">
                                 {mediaPreviews.length > 0 ? (
-                                    <img
-                                        src={mediaPreviews[0].url}
-                                        alt="Preview"
-                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                                    />
+                                    <img src={mediaPreviews[0].url} alt="Preview" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                                 ) : (
                                     <div className="flex flex-col items-center justify-center text-white/20">
                                         <ImagePlus size={48} strokeWidth={1} />
                                         <span className="text-xs mt-2 uppercase tracking-widest">Görsel Yok</span>
                                     </div>
                                 )}
-
-                                {/* Kategori Rozeti (Resmin Üstünde) */}
                                 <div className="absolute top-3 left-3 z-10">
                                     <span className={`px-3 py-1.5 ${activeCatData.previewPillBg} backdrop-blur-md border ${activeCatData.previewBorder} rounded-lg text-[10px] font-black uppercase tracking-wider ${activeCatData.previewText} shadow-xl flex items-center gap-1.5`}>
                                         <activeCatData.icon size={12} />
@@ -893,7 +877,6 @@ export default function CreateListingWizard() {
                                 </div>
                             </div>
 
-                            {/* 2. İçerik Alanı */}
                             <div className="p-5 flex-1 flex flex-col justify-between">
                                 <div>
                                     <div className="flex justify-between items-start mb-3">
@@ -905,7 +888,6 @@ export default function CreateListingWizard() {
                                         {formData.price && formData.price !== '0' ? `${Number(formData.price).toLocaleString('tr-TR')} ₺` : 'Ücretsiz'}
                                     </h3>
 
-                                    {/* 3. Kategoriye Özel Dinamik Bilgi Kutusu */}
                                     <div className="bg-black/30 rounded-xl p-3 mb-4 space-y-2 border border-white/5">
                                         {selectedCat === 'carpool' && (
                                             <>
@@ -943,7 +925,6 @@ export default function CreateListingWizard() {
                                     </div>
                                 </div>
 
-                                {/* 4. Alt Bilgi (Konum / Zaman) */}
                                 <div className="pt-4 border-t border-white/5 flex flex-col space-y-2">
                                     <div className="flex items-center text-gray-400 text-xs">
                                         <MapPin size={14} className={`mr-1.5 ${activeCatData.previewText}`} />

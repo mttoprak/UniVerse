@@ -17,13 +17,45 @@ interface Emergency {
     type: string;
 }
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
+async function fetchGraphQL(query: string, variables: any = {}) {
+    const token = localStorage.getItem('accessToken');
+    const response = await fetch(`${API_URL}/graphql`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ query, variables })
+    });
+
+    if (!response.ok) throw new Error(`API Hatası: ${response.status}`);
+    const result = await response.json();
+    if (result.errors) throw new Error(result.errors[0].message);
+    return result.data;
+}
+
+const GET_URGENT_LISTINGS = `#graphql
+query GetUrgentListings {
+    getUrgentListings {
+        _id: id
+        title
+        description
+        location
+        createdAt
+        expires
+        views
+        type
+    }
+}
+`;
+
 export default function EmergenciesPage() {
     const router = useRouter();
     const [emergencies, setEmergencies] = useState<Emergency[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-
-    const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
     useEffect(() => {
         const fetchEmergencies = async () => {
@@ -37,24 +69,12 @@ export default function EmergenciesPage() {
                     return;
                 }
 
-                const response = await fetch(`${API_URL}/api/listing`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
+                const data = await fetchGraphQL(GET_URGENT_LISTINGS);
+
+                // ARTIK HESAPLAMA YOK: Backend'in gönderdiği 'expires' zaten bitiş tarihidir!
+                const urgentListings = (data.getUrgentListings || []).map((ad: any) => {
+                    return { ...ad, expiresAt: ad.expires };
                 });
-
-                const data = await response.json();
-                if (!response.ok) throw new Error(data.message || 'Hata oluştu.');
-
-                // Veriyi filtrele ve CountdownTimer için hesapla
-                const urgentListings = (data.listings || [])
-                    .filter((ad: any) => ad.type === 'urgent')
-                    .map((ad: any) => {
-                        const createdAt = new Date(ad.createdAt);
-                        const expiresHours = parseInt(ad.expires || '0', 10);
-                        // Bitiş tarihi: Oluşturulma tarihi + expires süresi
-                        const expiresAt = new Date(createdAt.getTime() + (expiresHours * 60 * 60 * 1000));
-
-                        return { ...ad, expiresAt: expiresAt.toISOString() };
-                    });
 
                 setEmergencies(urgentListings);
             } catch (err: any) {
@@ -66,17 +86,15 @@ export default function EmergenciesPage() {
         };
 
         fetchEmergencies();
-    }, [router, API_URL]);
-
+    }, [router]);
 
     const formatDate = (dateString: string) => {
-        const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
-        return new Date(dateString).toLocaleDateString('tr-TR', options);
+        const date = new Date(Number(dateString) || dateString);
+        return date.toLocaleDateString('tr-TR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
     };
 
     return (
         <div className="relative min-h-screen pt-24 pb-12 px-4 md:px-8">
-            {/* Background Animation */}
             <style dangerouslySetInnerHTML={{ __html: `
                 @keyframes slow-breathe { 0%, 100% { opacity: 0.3; transform: scale(0.9); } 50% { opacity: 0.6; transform: scale(1.0); } }
                 .animate-slow-breathe { animation: slow-breathe 4s infinite ease-in-out; }
@@ -86,7 +104,6 @@ export default function EmergenciesPage() {
             </div>
 
             <div className="max-w-7xl mx-auto z-10 relative">
-                {/* Header */}
                 <div className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-rose-500/20 pb-6">
                     <div>
                         <div className="flex items-center space-x-3 mb-2">
@@ -98,9 +115,7 @@ export default function EmergenciesPage() {
                                 Acil Durum Panosu
                             </h1>
                         </div>
-                        <p className="text-gray-400 text-sm md:text-base">
-                            Kampüsteki anlık yardımlaşma ağı.
-                        </p>
+                        <p className="text-gray-400 text-sm md:text-base">Kampüsteki anlık yardımlaşma ağı.</p>
                     </div>
 
                     <button
@@ -112,7 +127,6 @@ export default function EmergenciesPage() {
                     </button>
                 </div>
 
-                {/* Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {!isLoading && emergencies.map((emergency) => (
                         <div

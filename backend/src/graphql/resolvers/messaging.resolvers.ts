@@ -5,6 +5,7 @@ import { withFilter } from 'graphql-subscriptions';
 import cloudinary from "../../utils/cloudinary/cloudinary.config";
 import { createActivityLog } from "../../utils/logger.util";
 import {sendMessageSchema} from "../../validators/message.validator.prisma";
+import {sendNewConversationEmail} from "../../utils/mail.utils";
 
 export const messagingResolvers = {
     Query: {
@@ -76,7 +77,7 @@ export const messagingResolvers = {
                     senderId: { not: context.userId },
                     isRead: false
                 },
-                data: { isRead: true, readAt: new Date() } //TODO READ
+                data: { isRead: true, readAt: new Date() }
             });
 
             // CONVERSATION SAYAÇLARINI SIFIRLAMA
@@ -106,10 +107,14 @@ export const messagingResolvers = {
             }
 
             if (convNeedsUpdate) {
-                await context.prisma.conversation.update({
+                // Prisma işlemi
+                const updatedConv = await context.prisma.conversation.update({
                     where: { id: conversationId },
                     data: updateData
                 });
+
+                // YENİ: Socket (PubSub) üzerinden bu sohbetin güncellendiğini haber ver
+                pubsub.publish(SUBSCRIPTION_EVENTS.CONVERSATION_UPDATED, { conversationUpdated: updatedConv });
             }
 
             return {
@@ -140,6 +145,72 @@ export const messagingResolvers = {
                 listingId: args.listingId,
                 currentUser: context.userId,
                 listingOwner: listing.ownerId
+            };
+        },
+        getListingApplications: async (_parent: any, args: any, context: GraphQLContext) => {
+            checkAuth(context);
+            const { listingId, page = 1, limit = 20, status } = args;
+
+            // 1. İlanı bul ve sahibini doğrula
+            const listing = await context.prisma.listing.findUnique({
+                where: { id: listingId },
+                select: { ownerId: true }
+            });
+
+            if (!listing) throw new Error("İlan bulunamadı.");
+            if (listing.ownerId !== context.userId) {
+                throw new Error("Sadece ilan sahibi başvuruları görebilir.");
+            }
+
+            // 2. Filtreleri oluştur (Sadece direkt başvurular, yani conversationId null olanlar)
+            const whereClause: any = {
+                listingId,
+                conversationId: null
+            };
+            if (status) whereClause.status = status;
+
+            // 3. Veriyi Prisma ile çek
+            const [applications, totalCount] = await Promise.all([
+                context.prisma.offer.findMany({
+                    where: whereClause,
+                    orderBy: { createdAt: 'desc' },
+                    skip: (page - 1) * limit,
+                    take: limit
+                }),
+                context.prisma.offer.count({ where: whereClause })
+            ]);
+
+            return {
+                applications,
+                total: totalCount,
+                page
+            };
+        },
+
+        // ─── GET MY APPLICATIONS (Kullanıcının Kendi Başvuruları) ───
+        getMyApplications: async (_parent: any, args: any, context: GraphQLContext) => {
+            checkAuth(context);
+            const { page = 1, limit = 20 } = args;
+
+            const whereClause = {
+                applicantId: context.userId!,
+                conversationId: null
+            };
+
+            const [applications, totalCount] = await Promise.all([
+                context.prisma.offer.findMany({
+                    where: whereClause,
+                    orderBy: { createdAt: 'desc' },
+                    skip: (page - 1) * limit,
+                    take: limit
+                }),
+                context.prisma.offer.count({ where: whereClause })
+            ]);
+
+            return {
+                applications,
+                total: totalCount,
+                page
             };
         }
     },
@@ -299,32 +370,317 @@ export const messagingResolvers = {
             // --- SOCKET (PUBSUB) YAYINLARI ---
             await pubsub.publish(SUBSCRIPTION_EVENTS.NEW_MESSAGE, { newMessage });
             await pubsub.publish(SUBSCRIPTION_EVENTS.CONVERSATION_UPDATED, { conversationUpdated: updatedConversation });
-
             return newMessage;
         },
 
         // ─── APPLY (İş/Burs Direkt Başvuru) ───
+        // applyToListing: async (_parent: any, { listingId, note }: any, context: GraphQLContext) => {
+        //     checkStudentOnly(context);
+        //
+        //     const listing = await context.prisma.listing.findUnique({ where: { id: listingId } });
+        //     if (!listing || !['job', 'scholarship'].includes(listing.type)) throw new Error("Bu ilana başvurulamaz");
+        //
+        //     const existing = await context.prisma.offer.findFirst({
+        //         where: { listingId, applicantId: context.userId!, conversationId: null, status: { in: ['Pending', 'Accepted'] } }
+        //     });
+        //     if (existing) throw new Error("Zaten başvurdunuz.");
+        //
+        //     const offer = await context.prisma.offer.create({
+        //         data: {
+        //             listingId,
+        //             applicantId: context.userId!,
+        //             note
+        //         }
+        //     });
+        //
+        //     return offer;
+        // },
+
         applyToListing: async (_parent: any, { listingId, note }: any, context: GraphQLContext) => {
-            checkStudentOnly(context);
+            checkAuth(context);
+            const applicantId = context.userId!;
 
             const listing = await context.prisma.listing.findUnique({ where: { id: listingId } });
-            if (!listing || !['job', 'scholarship'].includes(listing.type)) throw new Error("Bu ilana başvurulamaz");
+            if (!listing) throw new Error("İlan bulunamadı.");
+
+            const applicableTypes = ['job', 'scholarship'];
+            if (!applicableTypes.includes(listing.type)) {
+                throw new Error("Bu ilan türüne direkt başvuru yapılamaz. Mesaj üzerinden teklif gönderiniz.");
+            }
+
+            if (listing.ownerId === applicantId) {
+                throw new Error("Kendi ilanınıza başvuramazsınız.");
+            }
 
             const existing = await context.prisma.offer.findFirst({
-                where: { listingId, applicantId: context.userId!, conversationId: null, status: { in: ['Pending', 'Accepted'] } }
+                where: {
+                    listingId,
+                    applicantId,
+                    conversationId: null,
+                    status: { in: ['Pending', 'Accepted'] }
+                }
             });
-            if (existing) throw new Error("Zaten başvurdunuz.");
+
+            if (existing) throw new Error("Bu ilana zaten başvurdunuz.");
 
             const offer = await context.prisma.offer.create({
                 data: {
                     listingId,
-                    applicantId: context.userId!,
-                    note
+                    applicantId,
+                    note,
+                    status: 'Pending'
+                }
+            });
+
+            await context.prisma.activityLog.create({
+                data: {
+                    actorId: applicantId,
+                    action: "OFFER_SENT",
+                    entity_type: "Offer",
+                    entity_id: offer.id,
+                    metadata: { listingId, is_direct_application: true }
                 }
             });
 
             return offer;
         },
+
+        // ─── MAKE OFFER (Marketplace Sohbet İçi Teklif) ───
+        makeOffer: async (_parent: any, { input }: any, context: GraphQLContext) => {
+            checkAuth(context);
+            const { conversationId, price, pricePer, note } = input;
+            const userId = context.userId!;
+
+            const conversation = await context.prisma.conversation.findUnique({
+                where: { id: conversationId }
+            });
+
+            if (!conversation) throw new Error("Sohbet bulunamadı.");
+
+            if (conversation.sellerId !== userId && conversation.buyerId !== userId) {
+                throw new Error("Bu sohbete erişim yetkiniz yok.");
+            }
+
+            // Önceki bekleyen teklifleri temizle (Prisma Batch Update)
+            await context.prisma.$transaction([
+                // Kendisinin daha önce yaptığı bekleyen teklifleri Cancel yap
+                context.prisma.offer.updateMany({
+                    where: { conversationId, applicantId: userId, status: 'Pending' },
+                    data: { status: 'Cancelled' }
+                }),
+                // Karşı tarafın yaptığı bekleyen teklifleri Reject yap
+                context.prisma.offer.updateMany({
+                    where: { conversationId, applicantId: { not: userId }, status: 'Pending' },
+                    data: { status: 'Rejected' }
+                })
+            ]);
+
+            const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
+
+            // Yeni teklifi oluştur
+            const offer = await context.prisma.offer.create({
+                data: {
+                    listingId: conversation.listingId,
+                    applicantId: userId,
+                    conversationId,
+                    price,
+                    pricePer: pricePer || "One Time",
+                    note,
+                    status: 'Pending',
+                    expiresAt
+                }
+            });
+
+            // Sohbeti güncelle ve Sistem Mesajını tek seferde oluştur
+            const updatedConversation = await context.prisma.conversation.update({
+                where: { id: conversationId },
+                data: {
+                    offerStatus: "Offer Sent",
+                    messages: {
+                        create: {
+                            senderId: userId,
+                            type: 'system',
+                            offerId: offer.id,
+                            text: 'Yeni bir teklif gönderildi.'
+                        }
+                    }
+                },
+                include: { messages: { orderBy: { createdAt: 'desc' }, take: 1 } }
+            });
+
+            const systemMsg = updatedConversation.messages[0];
+
+            await context.prisma.activityLog.create({
+                data: {
+                    actorId: userId,
+                    action: "OFFER_SENT",
+                    entity_type: "Offer",
+                    entity_id: offer.id,
+                    metadata: { conversationId, price }
+                }
+            });
+
+            // WebSocket Yayınları
+            await pubsub.publish(SUBSCRIPTION_EVENTS.NEW_MESSAGE, { newMessage: systemMsg });
+            await pubsub.publish(SUBSCRIPTION_EVENTS.OFFER_UPDATED, { offerUpdated: offer });
+
+            return offer;
+        },
+
+        // ─── RESPOND TO OFFER (Teklifi Kabul / Reddet) ───
+        respondToOffer: async (_parent: any, { offerId, action }: any, context: GraphQLContext) => {
+            checkAuth(context);
+            const userId = context.userId!;
+
+            const offer = await context.prisma.offer.findUnique({
+                where: { id: offerId },
+                include: { listing: true }
+            });
+
+            if (!offer) throw new Error("Teklif bulunamadı.");
+            if (offer.status !== 'Pending') throw new Error("Bu teklif artık yanıtlanamaz.");
+
+            if (offer.conversationId) {
+                const conversation = await context.prisma.conversation.findUnique({
+                    where: { id: offer.conversationId }
+                });
+
+                if (!conversation) throw new Error("Sohbet bulunamadı.");
+                if (conversation.buyerId !== userId && conversation.sellerId !== userId) {
+                    throw new Error("Bu sohbete erişim yetkiniz yok.");
+                }
+                if (offer.applicantId === userId) {
+                    throw new Error("Kendi teklifinize yanıt veremezsiniz.");
+                }
+            } else {
+                if (offer.listing.ownerId !== userId) {
+                    throw new Error("Sadece ilan sahibi teklife yanıt verebilir.");
+                }
+            }
+
+            const newStatus = action === 'accepted' ? 'Accepted' : 'Rejected';
+
+            // 1. Teklifi Güncelle
+            const updatedOffer = await context.prisma.offer.update({
+                where: { id: offerId },
+                data: { status: newStatus }
+            });
+
+            await context.prisma.activityLog.create({
+                data: {
+                    actorId: userId,
+                    action: action === 'accepted' ? "OFFER_ACCEPTED" : "OFFER_REJECTED",
+                    entity_type: "Offer",
+                    entity_id: offer.id,
+                    metadata: { listingId: offer.listingId }
+                }
+            });
+
+            // 2. Kabul edildiyse ve ilan 2. el ise (Satıldı mantığı)
+            if (action === 'accepted' && offer.listing.type === 'secondhand') {
+                await context.prisma.listing.update({
+                    where: { id: offer.listingId },
+                    data: { status: 'sold' }
+                });
+
+                // Diğer bekleyen teklifleri bul ve reddet
+                const otherOffers = await context.prisma.offer.findMany({
+                    where: { listingId: offer.listingId, status: 'Pending', id: { not: offer.id } }
+                });
+
+                for (const other of otherOffers) {
+                    await context.prisma.offer.update({
+                        where: { id: other.id },
+                        data: { status: 'Rejected' }
+                    });
+
+                    if (other.conversationId) {
+                        await context.prisma.conversation.update({
+                            where: { id: other.conversationId },
+                            data: {
+                                offerStatus: 'Offer Rejected',
+                                messages: {
+                                    create: {
+                                        senderId: userId,
+                                        type: 'system',
+                                        text: 'İlan başka bir kullanıcıya satıldığı için teklif reddedildi.'
+                                    }
+                                }
+                            }
+                        });
+
+                        // Diğer kaybeden teklifler için de socket eventi fırlat
+                        await pubsub.publish(SUBSCRIPTION_EVENTS.OFFER_UPDATED, {
+                            offerUpdated: { ...other, status: 'Rejected' }
+                        });
+                    }
+                }
+            }
+
+            // 3. Sohbeti olan bir teklifse (Marketplace)
+            if (offer.conversationId) {
+                const statusText = action === 'accepted' ? 'Kabul edildi' : 'Reddedildi';
+
+                await context.prisma.conversation.update({
+                    where: { id: offer.conversationId },
+                    data: {
+                        offerStatus: action === 'accepted' ? 'Offer Accepted' : 'Offer Rejected',
+                        messages: {
+                            create: {
+                                senderId: userId,
+                                type: 'system',
+                                text: `Teklif ${statusText}`
+                            }
+                        }
+                    }
+                });
+
+                // Kazanan teklif için socket eventi fırlat
+                await pubsub.publish(SUBSCRIPTION_EVENTS.OFFER_UPDATED, { offerUpdated: updatedOffer });
+            }
+
+            return updatedOffer;
+        },
+
+        // ─── CANCEL OFFER (Teklifi İptal Et) ───
+        cancelOffer: async (_parent: any, { offerId }: any, context: GraphQLContext) => {
+            checkAuth(context);
+
+            const offer = await context.prisma.offer.findFirst({
+                where: {
+                    id: offerId,
+                    applicantId: context.userId!,
+                    status: 'Pending'
+                }
+            });
+
+            if (!offer) throw new Error("İptal edilebilir teklif bulunamadı.");
+
+            const updatedOffer = await context.prisma.offer.update({
+                where: { id: offerId },
+                data: { status: 'Cancelled' }
+            });
+
+            await context.prisma.activityLog.create({
+                data: {
+                    actorId: context.userId,
+                    action: "OFFER_CANCELLED",
+                    entity_type: "Offer",
+                    entity_id: offer.id
+                }
+            });
+
+            if (offer.conversationId) {
+                await context.prisma.conversation.update({
+                    where: { id: offer.conversationId },
+                    data: { offerStatus: 'No Offer' }
+                });
+
+                await pubsub.publish(SUBSCRIPTION_EVENTS.OFFER_UPDATED, { offerUpdated: updatedOffer });
+            }
+
+            return updatedOffer;
+        }
 
         // Diğer offer mutation'ları (respondToOffer, cancelOffer) aynı mantıkla prisma update olarak yazılacak.
     },
@@ -380,6 +736,20 @@ export const messagingResolvers = {
                         // Eğer bu güncellenen sohbetin alıcısı veya satıcısı bizim kullanıcıysa ilet
                         return conv.sellerId === variables.userId || conv.buyerId === variables.userId;
                     }
+                )(_parent, args, context);
+            }
+        },
+        offerUpdated: {
+            subscribe: async (_parent: any, args: any, context: GraphQLContext) => {
+                if (!context.userId) {
+                    throw new Error("Giriş yapmalısınız.");
+                }
+
+                // Opsiyonel: Burada da conversation üzerinden yetki kontrolü yapabilirsin
+                return withFilter(
+                    // SUBSCRIPTION_EVENTS içerisine OFFER_UPDATED eklemeyi unutma!
+                    () => pubsub.asyncIterableIterator(SUBSCRIPTION_EVENTS.OFFER_UPDATED || "OFFER_UPDATED"),
+                    (payload, variables) => String(payload.offerUpdated.conversationId) === String(variables.conversationId)
                 )(_parent, args, context);
             }
         }
