@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
-    Search, PlusCircle, Flame, TrendingUp,
+    Search, PlusCircle, TrendingUp,
     MapPin, Clock, ImageIcon, ChevronRight,
     HandHeart, Briefcase, FileText, AlertTriangle
 } from 'lucide-react';
@@ -20,78 +20,103 @@ interface Advert {
 }
 
 const formatTime = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('tr-TR', {
+    // GraphQL'den timestamp string'i dönebileceği için güvenli dönüştürme
+    const date = new Date(Number(dateString) || dateString);
+    return date.toLocaleDateString('tr-TR', {
         day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
     });
 };
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
+// --- GRAPHQL YARDIMCI FONKSİYONU ---
+async function fetchGraphQL(query: string, variables: any = {}) {
+    const token = localStorage.getItem('accessToken');
+    const response = await fetch(`${API_URL}/graphql`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ query, variables })
+    });
+
+    if (!response.ok) throw new Error(`API Hatası: ${response.status}`);
+    const result = await response.json();
+    if (result.errors) throw new Error(result.errors[0].message);
+    return result.data;
+}
+
+// --- GRAPHQL SORGULARI ---
+const GET_ME = `#graphql
+    query GetMeHome {
+        getMe {
+            account_type
+        }
+    }
+`;
+
+const GET_HOME_LISTINGS = `#graphql
+    query GetHomeListings {
+        getUrgentListings {
+            _id: id
+            title
+            location
+            createdAt
+            type
+        }
+        getFeedListings {
+            _id: id
+            title
+            price
+            location
+            createdAt
+            photos
+            category
+            type
+        }
+    }
+`;
 
 export default function Home() {
     const [urgentListings, setUrgentListings] = useState<Advert[]>([]);
     const [popularListings, setPopularListings] = useState<Advert[]>([]);
     const [accountType, setAccountType] = useState<string | null>(null);
 
-    const API_URL = process.env.NEXT_PUBLIC_API_URL;
-
-
     useEffect(() => {
         const fetchData = async () => {
             const rawToken = localStorage.getItem('accessToken');
             const isValidToken = rawToken && rawToken !== 'null' && rawToken !== 'undefined';
 
-            const headers: Record<string, string> = {
-                'Content-Type': 'application/json'
-            };
-
-            if (isValidToken) {
-                headers['Authorization'] = `Bearer ${rawToken}`;
-            }
-
             let fetchedType = 'student'; // Varsayılan değer
 
-            // user type
+            // 1. KULLANICI TİPİNİ ÇEK (Eğer giriş yapıldıysa)
             if (isValidToken) {
                 try {
-                    const userRes = await fetch(`${API_URL}/auth/me`, { headers });
-                    if (userRes.ok) {
-                        const userData = await userRes.json();
-                        fetchedType =
-                            userData?.account_type ||
-                            userData?.user?.account_type ||
-                            userData?.data?.account_type ||
-                            'student';
-
+                    const data = await fetchGraphQL(GET_ME);
+                    if (data.getMe) {
+                        fetchedType = data.getMe.account_type;
                         setAccountType(fetchedType);
-                    } else {
-                        console.warn(`[API] Kullanıcı profili çekilemedi. Durum: ${userRes.status}`);
                     }
                 } catch (userErr) {
-                    console.log("Kullanıcı bilgisi alınamadı", userErr);
+                    console.warn("Kullanıcı bilgisi alınamadı", userErr);
                 }
             }
 
-            // fetch listings (if not external)
+            // 2. İLANLARI ÇEK (Eğer kurumsal hesap değilse)
             if (fetchedType !== 'external') {
                 try {
-                    const baseRes = await fetch(`${API_URL}/api/listing`, { headers });
+                    // Tek bir GraphQL sorgusuyla iki farklı array'i de alıyoruz
+                    const data = await fetchGraphQL(GET_HOME_LISTINGS);
 
-                    if (baseRes.ok) {
-                        const baseData = await baseRes.json();
-                        const allListings: Advert[] = Array.isArray(baseData)
-                            ? baseData
-                            : (baseData.listings || baseData.data || []);
-
-                        const trueUrgent = allListings.filter((l: Advert) => l.type === 'urgent');
-                        setUrgentListings(trueUrgent.slice(0, 6));
-
-                        const remaining = allListings.filter((l: Advert) => l.type !== 'urgent');
-                        setPopularListings(remaining.slice(0, 6));
-                    } else if (baseRes.status === 403) {
-                        console.warn("[Güvenlik] 403 Forbidden: İlanları görüntüleme yetkiniz yok.");
-                    } else {
-                        console.warn(`[API] İlanlar çekilemedi. Durum: ${baseRes.status}`);
+                    if (data.getUrgentListings) {
+                        setUrgentListings(data.getUrgentListings.slice(0, 6));
                     }
-                } catch (error) {
-                    console.log('İlanlar çekilirken ağ hatası:', error);
+                    if (data.getFeedListings) {
+                        setPopularListings(data.getFeedListings.slice(0, 6));
+                    }
+                } catch (error: any) {
+                    console.log('İlanlar çekilirken hata:', error.message);
                 }
             } else {
                 console.log("Kurumsal hesap tespit edildi, ana akış ilanları gizlendi.");
@@ -115,9 +140,8 @@ export default function Home() {
                     `
                 }}
             />
-            {/* external user UI */}
-            <div className="flex flex-col items-center w-full min-h-screen pb-24">
 
+            <div className="flex flex-col items-center w-full min-h-screen pb-24">
                 {accountType === 'external' ? (
                     <div className="relative w-full flex flex-col items-center text-center mt-20 mb-40 px-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
                         <div className="inline-flex items-center space-x-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-black uppercase tracking-widest mb-8">

@@ -41,7 +41,7 @@ const sections: {
             },
             {
                 heading: "Hizmetin Kötüye Kullanımı",
-                text: "API endpoint'lerine (örneğin /api/offer/apply veya /api/user/me/saved) DDoS, brute-force veya botlar aracılığıyla spam istekler göndererek sistemi manipüle etmek veya sunucuyu yavaşlatmaya çalışmak yasal işlem sebebidir.",
+                text: "API endpoint'lerine DDoS, brute-force veya botlar aracılığıyla spam istekler göndererek sistemi manipüle etmek veya sunucuyu yavaşlatmaya çalışmak yasal işlem sebebidir.",
                 isCritical: true,
             },
         ],
