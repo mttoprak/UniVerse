@@ -39,9 +39,10 @@ query GetMeForVerification {
 }
 `;
 
+// DEĞİŞTİRİLEN KISIM 1: Artık değişken alıyor
 const SEND_EDU_VERIFICATION = `#graphql
-mutation SendEduVerification {
-    sendEduVerification
+mutation SendEduVerification($email: String!) {
+    sendEduVerification(email: $email)
 }
 `;
 
@@ -54,7 +55,7 @@ mutation VerifyEduMail($input: VerifyEduMailInput!) {
 export default function VerifyEduPage() {
     const router = useRouter();
 
-    const [step, setStep] = useState<1 | 2>(1); // 1: Kod Gönder, 2: Kodu Gir
+    const [step, setStep] = useState<1 | 2>(1);
     const [isLoading, setIsLoading] = useState(false);
     const [pageLoading, setPageLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -63,7 +64,6 @@ export default function VerifyEduPage() {
     const [eduEmail, setEduEmail] = useState('');
     const [code, setCode] = useState('');
 
-    // Sayfa açıldığında kullanıcı verisini GraphQL üzerinden çek
     useEffect(() => {
         const fetchUserData = async () => {
             if (!localStorage.getItem('accessToken')) {
@@ -76,7 +76,7 @@ export default function VerifyEduPage() {
 
                 if (data.getMe) {
                     if (data.getMe.is_verified) {
-                        router.push('/profile'); // Zaten onaylıysa profile yönlendir
+                        router.push('/profile');
                     }
                     if (data.getMe.edu_email) {
                         setEduEmail(data.getMe.edu_email);
@@ -92,20 +92,17 @@ export default function VerifyEduPage() {
         fetchUserData();
     }, [router]);
 
-    // 1. Kod Gönder
     const handleSendCode = async () => {
         setIsLoading(true);
         setError(null);
 
         try {
-            const data = await fetchGraphQL(SEND_EDU_VERIFICATION);
+            // DEĞİŞTİRİLEN KISIM 2: Kullanıcının yazdığı maili backend'e yolluyoruz!
+            const data = await fetchGraphQL(SEND_EDU_VERIFICATION, { email: eduEmail });
 
-            setStep(2); // Başarılıysa 2. adıma (kod girme ekranına) geç
-
-            // Backend'den dönen String mesajı gösterebilir veya statik mesaj kullanabilirsin
+            setStep(2);
             setSuccessMessage(data.sendEduVerification || 'Doğrulama kodu .edu.tr adresine gönderildi!');
 
-            // 3 saniye sonra mesajı gizle
             setTimeout(() => setSuccessMessage(null), 3000);
         } catch (err: any) {
             setError(err.message || 'Bir hata oluştu.');
@@ -114,7 +111,6 @@ export default function VerifyEduPage() {
         }
     };
 
-    // 2. Kodu Doğrula
     const handleVerify = async () => {
         if (code.length !== 6) {
             setError("Kod 6 haneli olmalıdır.");
@@ -125,7 +121,6 @@ export default function VerifyEduPage() {
         setError(null);
 
         try {
-            // GraphQL Typedefs'e göre VerifyEduMailInput sadece 'code' istiyor
             const data = await fetchGraphQL(VERIFY_EDU_MAIL, {
                 input: { code: code }
             });
@@ -156,7 +151,6 @@ export default function VerifyEduPage() {
     return (
         <div className="relative min-h-screen pt-24 pb-12 px-4 flex items-center justify-center">
 
-            {/* background glow */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10 flex items-center justify-center">
                 <div className="w-[50rem] h-[50rem] bg-violet-600/10 rounded-full blur-[200px] mix-blend-screen flex-shrink-0 animate-pulse"></div>
             </div>

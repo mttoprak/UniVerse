@@ -125,7 +125,8 @@ export default function CreateListingWizard() {
         title: '', description: '', price: '',
         origin: '', destination: '', departure_date: '', available_seats: '',
         application_url: '', deadline: '',
-        subject: '', format: '', condition: '', secondhandCategory: '', subcategory: ''
+        subject: '', format: '', condition: '', secondhandCategory: '', subcategory: '',
+        lecture: ''
     });
 
     const [districts, setDistricts] = useState<string[]>([]);
@@ -234,7 +235,7 @@ export default function CreateListingWizard() {
             case 'carpool': return !!(formData.origin && formData.destination && formData.departure_date && formData.available_seats);
             case 'roommate': return !!(city && district);
             case 'tutoring': return !!(formData.subject && formData.format);
-            case 'notes': return !!(formData.subcategory && formData.condition);
+            case 'notes': return !!(formData.lecture);
             case 'secondhand': return !!(city && district && formData.condition && formData.secondhandCategory);
             default: return false;
         }
@@ -347,8 +348,7 @@ export default function CreateListingWizard() {
                 input.subject = formData.subject;
                 input.format = formData.format;
                 if (schemaType === 'note') {
-                    input.subcategory = formData.subcategory;
-                    input.condition = formData.condition;
+                    input.lecture = formData.lecture;
                 }
             } else if (schemaType === 'job' || schemaType === 'scholarship') {
                 if (formData.application_url) input.application_url = formData.application_url;
@@ -738,22 +738,26 @@ export default function CreateListingWizard() {
                                 {selectedCat === 'notes' && (
                                     <div className="space-y-2">
                                         <label className="text-sm font-medium text-violet-400 ml-1">Ders Kodu / Adı <span className="text-rose-500">*</span></label>
-                                        <input type="text" value={formData.subcategory} onChange={(e) => handleFormChange('subcategory', e.target.value)} placeholder="Örn: MAT101" className="w-full bg-violet-500/5 border border-violet-500/20 rounded-xl py-3 px-4 outline-none text-gray-200 uppercase" />
+                                        <input type="text" value={formData.lecture} onChange={(e) => handleFormChange('lecture', e.target.value)} placeholder="Örn: MAT101" className="w-full bg-violet-500/5 border border-violet-500/20 rounded-xl py-3 px-4 outline-none text-gray-200 uppercase" />
                                     </div>
                                 )}
 
-                                <div className="space-y-2">
-                                    <label className="text-sm font-medium text-violet-400 ml-1">Kullanım Durumu <span className="text-rose-500">*</span></label>
-                                    <select value={formData.condition} onChange={(e) => handleFormChange('condition', e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 outline-none text-gray-200 appearance-none">
-                                        <option value="" className="bg-gray-900">Seçiniz...</option>
-                                        <option value="new" className="bg-gray-900">Sıfır</option>
-                                        <option value="like_new" className="bg-gray-900">Yeni Gibi (Az Kullanılmış)</option>
-                                        <option value="good" className="bg-gray-900">İyi Durumda</option>
-                                        <option value="fair" className="bg-gray-900">Hasarlı / Eski</option>
-                                    </select>
-                                </div>
+
 
                                 {selectedCat === 'secondhand' && (
+                                    <div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-violet-400 ml-1">Kullanım Durumu <span className="text-rose-500">*</span></label>
+                                        <select value={formData.condition} onChange={(e) => handleFormChange('condition', e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 outline-none text-gray-200 appearance-none">
+                                            <option value="" className="bg-gray-900">Seçiniz...</option>
+                                            <option value="new" className="bg-gray-900">Sıfır</option>
+                                            <option value="like_new" className="bg-gray-900">Yeni Gibi (Az Kullanılmış)</option>
+                                            <option value="good" className="bg-gray-900">İyi Durumda</option>
+                                            <option value="fair" className="bg-gray-900">Hasarlı / Eski</option>
+                                        </select>
+                                    </div>
+
                                     <div className="pt-4 border-t border-white/10 space-y-4">
                                         <div>
                                             <h4 className="text-sm font-bold text-violet-400 mb-1 flex items-center gap-2"><Tag size={16}/> Ürün Özellikleri</h4>
@@ -779,6 +783,7 @@ export default function CreateListingWizard() {
                                                             <input type="text" value={currentFeatureValue} onChange={(e) => setCurrentFeatureValue(e.target.value)} placeholder="Örn: Apple" className="w-full bg-black/40 border border-white/10 rounded-lg py-2.5 px-3 text-sm focus:border-violet-500/50 outline-none text-gray-200" />
                                                         </div>
                                                     </div>
+
                                                 ) : (
                                                     <>
                                                         <label className="text-xs text-gray-400">Seçim / Durum <span className="text-rose-500">*</span></label>
@@ -791,8 +796,10 @@ export default function CreateListingWizard() {
                                                             <input type="text" value={currentFeatureValue} onChange={(e) => setCurrentFeatureValue(e.target.value)} placeholder="Durumu belirt..." disabled={!currentFeatureKey} className="w-full bg-black/40 border border-white/10 rounded-lg py-2.5 px-3 text-sm focus:border-violet-500/50 outline-none text-gray-200 disabled:opacity-50" />
                                                         )}
                                                     </>
+
                                                 )}
                                             </div>
+                                        </div>
                                             <button onClick={handleAddFeature} disabled={!currentFeatureKey || (currentFeatureKey === 'Kendi Özelliğini Ekle' && (!customFeatureKeyInput || !currentFeatureValue)) || (currentFeatureKey !== 'Kendi Özelliğini Ekle' && !currentFeatureValue)} className="px-4 py-2.5 bg-violet-500 hover:bg-violet-400 disabled:bg-gray-700 disabled:text-gray-500 text-black font-bold rounded-lg text-sm transition-colors flex-shrink-0">Ekle</button>
                                         </div>
                                         {featuresList.length > 0 && (
@@ -906,7 +913,7 @@ export default function CreateListingWizard() {
                                             <div className="flex justify-between text-xs"><span className="text-gray-500">Durum:</span> <span className="text-gray-300">{formData.condition === 'new' ? 'Sıfır' : formData.condition === 'like_new' ? 'Yeni Gibi' : formData.condition === 'good' ? 'İyi Durumda' : formData.condition === 'fair' ? 'Eski/Hasarlı' : '-'}</span></div>
                                         )}
                                         {selectedCat === 'notes' && (
-                                            <div className="flex justify-between text-xs"><span className="text-gray-500">Ders Kodu:</span> <span className="text-violet-400 font-bold uppercase">{formData.subcategory || '-'}</span></div>
+                                            <div className="flex justify-between text-xs"><span className="text-gray-500">Ders Kodu:</span> <span className="text-violet-400 font-bold uppercase">{formData.lecture || '-'}</span></div>
                                         )}
                                         {selectedCat === 'tutoring' && (
                                             <>

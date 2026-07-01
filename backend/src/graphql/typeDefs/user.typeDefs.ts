@@ -117,7 +117,7 @@ type Mutation {
     # YENİ EKLENDİ: Profil Fotoğrafı Güncelleme
     updateProfilePhoto(photoUrl: String!): String!
 
-    sendEduVerification: String!
+    sendEduVerification(email: String!): String!
     verifyEduMail(input: VerifyEduMailInput!): String!
 
     toggleFavorite(listingId: ID!): ToggleFavoriteResponse!

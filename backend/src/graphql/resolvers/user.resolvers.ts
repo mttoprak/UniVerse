@@ -162,28 +162,39 @@ export const userResolvers = {
             return updatedUser;
         },
 
-        sendEduVerification: async (_parent: any, _args: any, context: GraphQLContext) => {
+        sendEduVerification: async (_parent: any, args: { email: string }, context: GraphQLContext) => {
             checkAuth(context);
 
             const user = context.user;
+            const { email } = args; // Frontend'den gelen maili yakalıyoruz
 
             if (user?.account_type !== "student") throw new Error("Sadece öğrenciler edu mail ekleyebilir.");
-            if (!user?.edu_email) throw new Error("Edu Mail adresi bulunamadı.");
             if (user?.is_verified) throw new Error("Kullanıcı zaten doğrulanmış bir öğrenci.");
 
+            // Güvenlik: .edu.tr kontrolü
+            if (!email || !email.includes('.edu.tr')) {
+                throw new Error("Lütfen geçerli bir .edu.tr uzantılı e-posta girin.");
+            }
+
+            // 1. ADIM: Frontend'den gelen maili kullanıcının veritabanına kaydet
+            await context.prisma.user.update({
+                where: { id: user!.id },
+                data: { edu_email: email }
+            });
+
+            // 2. ADIM: Kodu üret
             const code = generateCode();
             const hashedCode = await bcrypt.hash(code, 10);
             const expires = new Date(Date.now() + 10 * 60 * 1000);
 
+            // 3. ADIM: Doğrulama tablosuna yaz
             await context.prisma.pendingVerification.upsert({
-                where:  { email: user.edu_email },
+                where:  { email: email },
                 update: { code: hashedCode, expires },
-                create: { email: user.edu_email, code: hashedCode, expires },
+                create: { email: email, code: hashedCode, expires },
             });
 
-            if (process.env.DEVPROCESS === "true") {
-                console.log(`[DEV] Generated Code for ${user.edu_email}: ${code}`);
-            }
+            console.log(`[DEV] Generated Code for ${email}: ${code}`);
 
             return "Doğrulama kodu başarıyla gönderildi.";
         },
