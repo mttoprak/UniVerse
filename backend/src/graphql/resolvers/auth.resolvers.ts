@@ -6,7 +6,8 @@ import { localRegisterSchema, loginSchema } from "../../validators/auth.validato
 import { createActivityLog } from "../../utils/logger.util";
 import {studentOnly} from "../../middleware/middleware";
 import {checkAuth} from "../guards";
-import {sendPasswordResetEmail, sendVerificationEmail} from "../../utils/mail.utils";
+import { sendPasswordResetEmail,
+    sendVerificationEmail } from "../../utils/mail.utils";
 
 
 const generateCode = (): string => Math.floor(100000 + Math.random() * 900000).toString();

@@ -3,9 +3,7 @@ import { checkAuth, checkStudentOnly } from "../guards";
 import { pubsub, SUBSCRIPTION_EVENTS } from "../../utils/pubsub.util";
 import { withFilter } from 'graphql-subscriptions';
 import cloudinary from "../../utils/cloudinary/cloudinary.config";
-import { createActivityLog } from "../../utils/logger.util";
-import {sendMessageSchema} from "../../validators/message.validator.prisma";
-import {sendNewConversationEmail} from "../../utils/mail.utils";
+import { sendMessageSchema } from "../../validators/message.validator.prisma";
 
 export const messagingResolvers = {
     Query: {

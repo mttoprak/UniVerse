@@ -1,6 +1,6 @@
-    import {z, ZodError} from "zod";
-    import {createActivityLog} from "../../utils/logger.util";
-    import {GraphQLContext} from "../context";
+    import { z, ZodError } from "zod";
+    import { createActivityLog } from "../../utils/logger.util";
+    import { GraphQLContext } from "../context";
     import cloudinary from "../../utils/cloudinary/cloudinary.config"; // Kendi dosya yoluna göre ayarla
     import {checkAuth, checkStudentOnly} from "../guards";
     import {createListingSchema, listingSchemasMap} from "../../validators/listing.validator";
@@ -68,10 +68,14 @@
                     }
                 ];
 
-                // 2. KATEGORİ VE TİP FİLTRELERİ
-                if (args.type) baseConditions.push({ type: args.type });
-                if (args.category) baseConditions.push({ category: args.category });
+                if (args.type) {
+                    // "job,scholarship" -> ["job", "scholarship"]
+                    baseConditions.push({ type: { in: args.type.split(',') } });
+                }
 
+                if (args.category) {
+                    baseConditions.push({ category: { in: args.category.split(',') } });
+                }
                 // 3. ARAMA KELİMESİ FİLTRESİ
                 if (args.q) {
                     // Eğer arama kelimesi varsa, bu kelime Başlık VEYA Açıklama içinde geçmeli

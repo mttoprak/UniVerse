@@ -1,7 +1,8 @@
 // backend/src/graphql/resolvers/comment.resolvers.ts
 
 import { GraphQLContext } from "../context";
-import {checkAuth, checkStudentOnly} from "../guards";
+import { checkAuth,
+    checkStudentOnly } from "../guards";
 import { createCommentSchema, updateCommentSchema } from "../../validators/comment.validator.prisma";
 import { createActivityLog } from "../../utils/logger.util";
 

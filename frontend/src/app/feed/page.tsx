@@ -15,11 +15,9 @@ interface Advert {
     photos?: string[];
 }
 
-// MT NOT: Şemanda getFeedListings argüman almıyor görünüyordu. Filtrelerin backend'e
-// iletilmesi için şemandaki getListings'i kullandım.
 const GET_LISTINGS_QUERY = `
-  query GetListings($q: String, $category: String, $sort: String) {
-    getListings(q: $q, category: $category, sort: $sort) {
+  query GetListings($q: String, $type: String, $sort: String) {
+    getListings(q: $q, type: $type, sort: $sort) {
       id
       title
       price
@@ -80,7 +78,7 @@ export default function FeedPage() {
         { id: 'scholarship', label: 'Burs' },
         { id: 'carpooling', label: 'Yol Arkadaşı' },
         { id: 'course', label: 'Özel Ders' },
-        { id: 'textbooks_and_notes', label: 'Ders Notu / Kitap' }
+        { id: 'note', label: 'Ders Notu / Kitap' }
     ];
 
     const handleCategoryToggle = (categoryId: string) => {
@@ -113,7 +111,7 @@ export default function FeedPage() {
                     query: GET_LISTINGS_QUERY,
                     variables: {
                         q: searchQuery || undefined,
-                        category: selectedCategories.length > 0 ? selectedCategories.join(',') : undefined,
+                        type: selectedCategories.length > 0 ? selectedCategories.join(',') : undefined, // <-- category yerine type oldu
                         sort: sortBy
                     }
                 })

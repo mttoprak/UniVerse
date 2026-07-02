@@ -3,7 +3,7 @@ import { checkAuth } from "../guards";
 import bcrypt from "bcryptjs";
 import GraphQLJSON from "graphql-type-json";
 import { v2 as cloudinary } from "cloudinary";
-import {pubsub, SUBSCRIPTION_EVENTS} from "../../utils/pubsub.util";
+import { pubsub, SUBSCRIPTION_EVENTS } from "../../utils/pubsub.util";
 
 const generateCode = (): string =>
     Math.floor(100000 + Math.random() * 900000).toString();

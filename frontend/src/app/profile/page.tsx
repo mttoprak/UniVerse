@@ -705,8 +705,8 @@ export default function ProfilePage() {
                                         </h3>
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            {items.map((savedItem: any) => (
-                                                <div key={savedItem._id} className="bg-white/5 border border-white/10 rounded-2xl p-4 flex gap-4 group hover:border-indigo-500/30 transition-all">
+                                            {items.map((savedItem: any, index: number) => (
+                                                <div key={savedItem._id || savedItem.id || `saved-item-${index}`} className="bg-white/5 border border-white/10 rounded-2xl p-4 flex gap-4 group hover:border-indigo-500/30 transition-all">
                                                     <div className="w-16 h-16 rounded-xl bg-[#0B0F19] overflow-hidden flex-shrink-0 cursor-pointer" onClick={() => router.push(`/listings/${savedItem._id}`)}>
                                                         {savedItem.photos?.length > 0 ? (
                                                             <img src={savedItem.photos[0]} alt="" className="w-full h-full object-cover group-hover:scale-110 transition-transform" />

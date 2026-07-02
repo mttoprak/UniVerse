@@ -20,8 +20,8 @@ export function getWsClient(): Client | null {
         url: wsUrl,
         connectionParams: { Authorization: `Bearer ${token}` },
         on: {
-            connected: () => console.log('🟢 GraphQL WS: Bağlantı Başarılı'),
-            error: (err) => console.log('🔴 GraphQL WS Hatası:', err),
+            // connected: () => console.log('GraphQL WS: Bağlantı Başarılı'),
+            error: (err) => console.log('GraphQL WS Hatası:', err),
         }
     });
 
