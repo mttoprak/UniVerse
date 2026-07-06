@@ -5,6 +5,8 @@ import { messagingTypeDefs  } from "./messaging.typeDefs";
 import { commentTypeDefs    } from "./comment.typeDefs";
 import { adminTypeDefs      } from "./admin.typeDefs";
 import { miscTypeDefs       } from "./misc.typeDefs";
+import { AITypeDefs         } from "./ai.typeDefs";
+
 
 export const typeDefs = [
     userTypeDefs,
@@ -13,6 +15,7 @@ export const typeDefs = [
     messagingTypeDefs,
     commentTypeDefs,
     adminTypeDefs,
-    miscTypeDefs
+    miscTypeDefs,
+    AITypeDefs
 
 ];

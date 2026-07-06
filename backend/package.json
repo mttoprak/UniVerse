@@ -13,6 +13,7 @@
   "author": "Ahmet Emin Genc, İsmail Gultekin, Mehmet Toprak",
   "license": "ISC",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.109.1",
     "@apollo/server": "^5.5.1",
     "@as-integrations/express4": "^1.1.2",
     "@graphql-tools/schema": "^10.0.33",

@@ -2,10 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { gql } from '@apollo/client';
+import { useQuery } from '@apollo/client/react';
 import { Search, MapPin, Filter, Clock, ChevronDown, ImageIcon, AlertCircle } from 'lucide-react';
 
 interface Advert {
-    _id: string; // UI bu şekilde beklediği için _id tutuyoruz
+    _id: string;
     title: string;
     price: number | string;
     category: string;
@@ -15,7 +17,28 @@ interface Advert {
     photos?: string[];
 }
 
-const GET_LISTINGS_QUERY = `
+interface RawListing {
+    id: string;
+    title: string;
+    price: number | string;
+    category: string;
+    type: string;
+    location: string;
+    createdAt: string;
+    photos?: string[];
+}
+
+interface GetListingsResult {
+    getListings: RawListing[];
+}
+
+interface GetListingsVars {
+    q?: string;
+    type?: string;
+    sort?: string;
+}
+
+const GET_LISTINGS_QUERY = gql`
   query GetListings($q: String, $type: String, $sort: String) {
     getListings(q: $q, type: $type, sort: $sort) {
       id
@@ -30,24 +53,6 @@ const GET_LISTINGS_QUERY = `
   }
 `;
 
-// Eğer illaki parametresiz olan getFeedListings'i kullanacaksan query stringini bununla değiştir.
-/*
-const GET_FEED_LISTINGS_QUERY = `
-  query GetFeedListings {
-    getFeedListings {
-      id
-      title
-      price
-      category
-      type
-      location
-      createdAt
-      photos
-    }
-  }
-`;
-*/
-
 export default function FeedPage() {
     const router = useRouter();
 
@@ -55,14 +60,49 @@ export default function FeedPage() {
     const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
     const [minPrice, setMinPrice] = useState('');
     const [maxPrice, setMaxPrice] = useState('');
-    const [adverts, setAdverts] = useState<Advert[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
     const [sortBy, setSortBy] = useState('newest');
     const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
+
+    // Debounced values so we don't refire the query on every keystroke
+    const [debouncedSearch, setDebouncedSearch] = useState('');
+    const [debouncedCategories, setDebouncedCategories] = useState<string[]>([]);
+
+    useEffect(() => {
+        const t = setTimeout(() => {
+            setDebouncedSearch(searchQuery);
+            setDebouncedCategories(selectedCategories);
+        }, 500);
+        return () => clearTimeout(t);
+    }, [searchQuery, selectedCategories]);
+
+    // Redirect if not logged in
+    useEffect(() => {
+        const token = localStorage.getItem('accessToken');
+        if (!token) router.push('/login');
+    }, [router]);
+
+    const { data, loading, error } = useQuery<GetListingsResult, GetListingsVars>(GET_LISTINGS_QUERY, {
+        variables: {
+            q: debouncedSearch || undefined,
+            type: debouncedCategories.length > 0 ? debouncedCategories.join(',') : undefined,
+            sort: sortBy,
+        },
+        fetchPolicy: 'cache-and-network',
+    });
+
+    // Map id -> _id, drop urgent, apply price filter (client-side)
+    const fetchedData = data?.getListings ?? [];
+    const adverts: Advert[] = fetchedData
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .map((item: any) => ({ ...item, _id: item.id }))
+        .filter((ad: Advert) => ad.type !== 'urgent')
+        .filter((ad: Advert) => {
+            const priceNum = Number(ad.price);
+            if (minPrice && priceNum < Number(minPrice)) return false;
+            if (maxPrice && priceNum > Number(maxPrice)) return false;
+            return true;
+        });
 
     const sortOptions = [
         { id: 'newest', label: 'En Yeni' },
@@ -88,83 +128,6 @@ export default function FeedPage() {
                 : [...prev, categoryId]
         );
     };
-
-    const fetchAdverts = async () => {
-        setIsLoading(true);
-        setError(null);
-
-        try {
-            const token = localStorage.getItem('accessToken');
-            if (!token) {
-                router.push('/login');
-                return;
-            }
-
-            // Doğrudan Fetch ile GraphQL isteği atıyoruz
-            const response = await fetch(`${API_URL}/graphql`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    query: GET_LISTINGS_QUERY,
-                    variables: {
-                        q: searchQuery || undefined,
-                        type: selectedCategories.length > 0 ? selectedCategories.join(',') : undefined, // <-- category yerine type oldu
-                        sort: sortBy
-                    }
-                })
-            });
-
-            const result = await response.json();
-
-            if (result.errors) {
-                setError(result.errors[0]?.message || 'İlanlar çekilirken bir hata oluştu.');
-                setAdverts([]);
-                return;
-            }
-
-            // İster getListings'den gelsin ister getFeedListings'den, güvenli yakalama
-            const fetchedData = result.data?.getListings || result.data?.getFeedListings || [];
-
-            // UI'ın çökmemesi için dönen 'id' değerlerini '_id' formatına eşitliyoruz
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const formattedListings: Advert[] = fetchedData.map((item: any) => ({
-                ...item,
-                _id: item.id
-            }));
-
-            // 1. Backend'den dönenlerden "urgent" olanları ayıklıyoruz
-            const nonUrgentListings = formattedListings.filter((ad) => ad.type !== 'urgent');
-
-            // 2. Fiyat min/max işlemi şemada olmadığından JS ile frontend'de hallediyoruz
-            const finalFilteredListings = nonUrgentListings.filter(ad => {
-                const priceNum = Number(ad.price);
-                if (minPrice && priceNum < Number(minPrice)) return false;
-                if (maxPrice && priceNum > Number(maxPrice)) return false;
-                return true;
-            });
-
-            setAdverts(finalFilteredListings);
-
-        } catch (err) {
-            setError("İlanlar yüklenemedi. Ağ hatası.");
-            setAdverts([]);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    // Filtreler değiştiğinde tetikleme (Debounce)
-    useEffect(() => {
-        const delayDebounceFn = setTimeout(() => {
-            fetchAdverts();
-        }, 500);
-
-        return () => clearTimeout(delayDebounceFn);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [searchQuery, sortBy, selectedCategories, minPrice, maxPrice]);
 
     const formatDate = (dateString: string) => {
         const options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' };
@@ -206,7 +169,7 @@ export default function FeedPage() {
                             />
                         </div>
 
-                        {/* Categories (7 MVP Categories) */}
+                        {/* Categories */}
                         <div className="space-y-3">
                             <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Kategoriler</h3>
                             {categoryOptions.map((cat) => (
@@ -248,9 +211,8 @@ export default function FeedPage() {
 
                         <div className="h-px w-full bg-white/5 my-6"></div>
 
-                        {/* Apply Filters Button */}
+                        {/* Price filter is client-side & reactive, so this just reassures the user */}
                         <button
-                            onClick={() => fetchAdverts()}
                             className="w-full py-3 bg-cyan-600/20 hover:bg-cyan-600/40 border border-cyan-500/30 rounded-xl text-cyan-300 font-bold transition-all shadow-[0_0_15px_rgba(34,211,238,0.1)] hover:shadow-[0_0_20px_rgba(34,211,238,0.2)]"
                         >
                             Fiyatı Uygula
@@ -264,7 +226,7 @@ export default function FeedPage() {
                     {/* Top Bar for Sorting */}
                     <div className="flex items-center justify-between mb-6 bg-black/20 backdrop-blur-md border border-white/5 rounded-2xl p-4 relative z-30">
                         <p className="text-sm text-gray-400">
-                            {isLoading ? 'Yükleniyor...' : `${adverts.length} ilan bulundu`}
+                            {loading ? 'Yükleniyor...' : `${adverts.length} ilan bulundu`}
                         </p>
 
                         {/* Sort Dropdown */}
@@ -277,7 +239,6 @@ export default function FeedPage() {
                                 <ChevronDown size={16} className={`transition-transform ${isSortMenuOpen ? 'rotate-180' : ''}`} />
                             </button>
 
-                            {/* Dropdown Menu */}
                             {isSortMenuOpen && (
                                 <div className="absolute right-0 mt-3 w-48 bg-[#0B0F19] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-20">
                                     {sortOptions.map((option) => (
@@ -301,12 +262,12 @@ export default function FeedPage() {
                     {error && (
                         <div className="w-full p-4 mb-6 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-center gap-3 text-rose-400 text-sm font-medium">
                             <AlertCircle size={18} />
-                            {error}
+                            {error.message || 'İlanlar çekilirken bir hata oluştu.'}
                         </div>
                     )}
 
-                    {/* Advert Grid  */}
-                    {!isLoading && adverts.length === 0 && !error ? (
+                    {/* Advert Grid */}
+                    {!loading && adverts.length === 0 && !error ? (
                         <div className="w-full py-20 flex flex-col items-center justify-center border border-dashed border-white/10 rounded-3xl bg-black/20">
                             <Search size={48} className="text-gray-600 mb-4" />
                             <h3 className="text-xl font-bold text-white mb-2">İlan Bulunamadı</h3>
@@ -318,9 +279,8 @@ export default function FeedPage() {
                                 <div
                                     key={advert._id}
                                     onClick={() => router.push(`/listings/${advert._id}`)}
-                                    className={`group bg-white/5 backdrop-blur-md border border-white/10 hover:border-cyan-500/30 rounded-2xl overflow-hidden transition-all hover:transform hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(34,211,238,0.1)] flex flex-col cursor-pointer relative`}
+                                    className="group bg-white/5 backdrop-blur-md border border-white/10 hover:border-cyan-500/30 rounded-2xl overflow-hidden transition-all hover:transform hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(34,211,238,0.1)] flex flex-col cursor-pointer relative"
                                 >
-
                                     {/* Image Container */}
                                     <div className="w-full h-48 bg-black/40 relative overflow-hidden flex items-center justify-center border-b border-white/5">
                                         {advert.photos && advert.photos.length > 0 ? (
@@ -336,7 +296,6 @@ export default function FeedPage() {
                                             </div>
                                         )}
 
-                                        {/* Category Badge overlayed on image */}
                                         <div className="absolute top-3 left-3">
                                             <span className="px-3 py-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-lg text-[10px] font-black uppercase tracking-wider text-cyan-400 shadow-xl">
                                                 {getCategoryName(advert)}
@@ -344,7 +303,7 @@ export default function FeedPage() {
                                         </div>
                                     </div>
 
-                                    {/* Card Content Area */}
+                                    {/* Card Content */}
                                     <div className="p-5 flex-1 flex flex-col justify-between">
                                         <div>
                                             <div className="flex justify-between items-start mb-3">
@@ -357,7 +316,6 @@ export default function FeedPage() {
                                             </h3>
                                         </div>
 
-                                        {/* Card Footer */}
                                         <div className="pt-4 border-t border-white/5 flex flex-col space-y-2">
                                             <div className="flex items-center text-gray-400 text-xs">
                                                 <MapPin size={14} className="mr-1.5 text-cyan-400" />
@@ -369,12 +327,10 @@ export default function FeedPage() {
                                             </div>
                                         </div>
                                     </div>
-
                                 </div>
                             ))}
                         </div>
                     )}
-
                 </main>
             </div>
         </div>

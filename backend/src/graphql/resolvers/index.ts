@@ -5,6 +5,7 @@ import { messagingResolvers } from "./messaging.resolvers";
 import { commentResolvers   } from "./comment.resolvers";
 import { adminResolvers     } from "./admin.resolvers";
 import { miscResolvers      } from "./misc.resolvers";
+import { AIResolvers        } from "./ai.resolvers";
 
 export const resolvers = [
     userResolvers,
@@ -13,5 +14,6 @@ export const resolvers = [
     messagingResolvers,
     commentResolvers,
     adminResolvers,
-    miscResolvers
+    miscResolvers,
+    AIResolvers
 ];

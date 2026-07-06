@@ -4,6 +4,7 @@ import "./globals.css";
 import Navbar from "@/components/Navbar";
 import SystemAnnouncement from "@/components/SystemAnnouncement";
 import GlobalChatWidget from '@/components/GlobalChatWidget';
+import { ApolloWrapper } from "./ApolloWrapper";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -21,15 +22,19 @@ export default function RootLayout({
         <html lang="tr">
         <body className={`${inter.className} bg-[#0B0F19] text-gray-100 antialiased min-h-screen flex flex-col`}>
 
-        <Navbar />
+        <ApolloWrapper>
 
-        <GlobalChatWidget />
+            <Navbar />
 
-        <SystemAnnouncement />
+            <GlobalChatWidget />
 
-        <main className="flex-grow pt-24 pb-12 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full">
-            {children}
-        </main>
+            <SystemAnnouncement />
+
+            <main className="flex-grow pt-24 pb-12 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full">
+                {children}
+            </main>
+
+        </ApolloWrapper>
 
         </body>
         </html>
