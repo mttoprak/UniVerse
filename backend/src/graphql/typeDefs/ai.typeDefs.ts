@@ -1,19 +1,16 @@
 export const AITypeDefs = `#graphql
 
 input askChatbotInput {
-    query: String!
+    message: String!
     aiConversationId: ID
 }
 
 type AIResponse {
-    token: String!
-    is_complete: Boolean!
-    user: User
+    aiConversationId: ID!
+    message: String!
 }
-
 
 type Mutation {
-    askChatbot(input: askChatbotInput!): String!
+    askChatbot(input: askChatbotInput!): AIResponse!
 }
-
 `;
