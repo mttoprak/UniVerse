@@ -20,7 +20,7 @@ export const AIResolvers = {
         askChatbot: async (_parent: any, args: { input: any }, context: GraphQLContext) => {
 
             checkStudentOnly(context);
-
+            //hey
             let message: string;
             let AIConversationId: string;
             let messages: any[] = [];
