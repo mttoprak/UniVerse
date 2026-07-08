@@ -44,3 +44,24 @@ export const getListingSchema = z.object({
         "The exact unique identifier of the listing to retrieve. Only use IDs that actually appeared in a prior search result or tool call in this conversation — never guess or invent one."
     ),
 })
+
+export const presentListingsSchema = z.object({
+    listings: z.array(
+        z.object({
+            id: z.uuid().describe(
+                "The exact unique identifier of a listing to show the user. Only use IDs that actually appeared in a prior search_listings or get_listing result in this conversation — never guess or invent one."
+            ),
+            note: z.string().max(200).optional().describe(
+                "A short, optional note about why this specific listing fits the user's need (e.g. 'oyunlar için ideal'). Shown alongside this listing's card."
+            ),
+        })
+    ).min(1).describe(
+        "The listings to present to the user, in the order they should be displayed. The most relevant should come first."
+    ),
+    messageBefore: z.string().describe(
+        "The message text shown ABOVE the listing cards. Introduce what you found here."
+    ),
+    messageAfter: z.string().optional().describe(
+        "Optional message text shown BELOW the listing cards, e.g. a recommendation or follow-up question."
+    ),
+})
