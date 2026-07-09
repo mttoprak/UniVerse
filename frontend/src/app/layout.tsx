@@ -5,6 +5,7 @@ import Navbar from "@/components/Navbar";
 import SystemAnnouncement from "@/components/SystemAnnouncement";
 import GlobalChatWidget from '@/components/GlobalChatWidget';
 import { ApolloWrapper } from "./ApolloWrapper";
+import AiChatBubble from "@/components/AiChatBubble";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -25,6 +26,8 @@ export default function RootLayout({
         <ApolloWrapper>
 
             <Navbar />
+
+            <AiChatBubble />       {/* AI assistant */}
 
             <GlobalChatWidget />
 

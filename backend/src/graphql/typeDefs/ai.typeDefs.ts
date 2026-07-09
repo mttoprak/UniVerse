@@ -10,11 +10,13 @@ type AIResponse {
     message: String!
     messageAfter: String
     listings: [PresentedListing!]!
+    title: String
 }
 
 input askChatbotInput {
     message: String!
     aiConversationId: ID
+    title: Boolean 
 }
 
 type Mutation {

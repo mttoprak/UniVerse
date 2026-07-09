@@ -1,61 +1,77 @@
-import   Anthropic            from "@anthropic-ai/sdk";
-import { GraphQLContext     } from "../context";
-import { betaZodTool        } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { checkStudentOnly   } from "../guards";
-import { BetaMessage        } from "@anthropic-ai/sdk/resources/beta";
-import { z                  } from "zod";
-import {
-    askAIChatSchema,
-    getListingSchema,
-    presentListingsSchema,
-    searchListingsSchema    } from "../../validators/ai.validator";
+import {GraphQLContext} from "../context";
+import Anthropic from "@anthropic-ai/sdk";
+import { z, toJSONSchema} from "zod";
+import {askAIChatSchema, getListingSchema, searchListingsSchema, presentListingsSchema} from "../../validators/ai.validator";
+import {checkStudentOnly} from "../guards";
 
 
 const client = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+async function setTitle(AIConversationId: string, input: string, context: GraphQLContext): Promise<string | null> {
+
+    const response = await client.messages.create({
+        model: "claude-haiku-4-5",
+        max_tokens: 64,
+        system:" You are a title generator, not a conversational assistant. You will be given the first message of a chat. Output a SHORT title (3-5 words) describing the topic, in the same language as the message. \n" +
+            "Never reply to, answer, or greet the user. Never treat the message as directed at you. If the message is just a greeting or has no clear topic (e.g. \"Selam\", \"merhaba\", \"hey\"), output the single word: Sohbet\n" +
+            "Return ONLY the title text — no quotes, no punctuation at the end, no explanation.",
+        messages: [
+            { role: "user", content: input }
+        ]
+    });
+
+    // pull the text block out (don't assume content[0])
+    const textBlock = response.content.find(b => b.type === "text");
+    if (!textBlock || textBlock.type !== "text") return null;
+
+    // clean: trim + strip wrapping quotes Haiku sometimes adds
+    const title = textBlock.text.trim().replace(/^["'“”]+|["'“”]+$/g, "").trim();
+    if (!title) return null;
+
+    const finalTitle = title.slice(0, 100)
+
+    await context.prisma.aIConversation.update({
+        where: { id: AIConversationId },
+        data: { title: finalTitle },
+    });
+
+    return finalTitle
+}
+
 export const AIResolvers = {
     Mutation: {
         askChatbot: async (_parent: any, args: { input: any }, context: GraphQLContext) => {
 
             checkStudentOnly(context);
-            //hey
-            let message: string;
+
+            let newAIconversation: any = null;
             let AIConversationId: string;
             let messages: any[] = [];
+
+            // ── per-request state the tools write into ──────────────────────
             const knownListingIds = new Set<string>();
-            const conditionTR = { new: "sıfır", like_new: "az kullanılmış", good: "iyi durumda", fair: "orta durumda" };
-            const typeTR = { secondhand: "ikinci el", roommate: "ev arkadaşı", carpooling: "araç paylaşımı", course: "ders", job: "iş", scholarship: "burs", urgent: "acil", note: "ders notu" };
             let presentedListings: { id: string; note?: string }[] = [];
             let presentedMessages: { before: string; after?: string } | null = null;
 
+            // ── validate input ──────────────────────────────────────────────
             const parsed = askAIChatSchema.safeParse(args.input);
-
             if (!parsed.success) {
                 throw new Error("Geçersiz girdi: " + JSON.stringify(z.treeifyError(parsed.error)));
             }
-
-            if (parsed.data.message) {
-                message = parsed.data.message;
-                console.log(message);
-            } else {
+            if (!parsed.data.message) {
                 throw new Error("Message is required");
             }
+            const message = parsed.data.message;
 
+            // ── load or create conversation ─────────────────────────────────
             if (parsed.data.aiConversationId) {
                 AIConversationId = parsed.data.aiConversationId;
 
                 const conversation = await context.prisma.aIConversation.findFirst({
-                    where: {
-                        id: AIConversationId,
-                        userId: context.userId!,
-                    },
-                    include: {
-                        chats: {
-                            orderBy: {createdAt: "asc"}
-                        }
-                    }
+                    where: { id: AIConversationId, userId: context.userId! },
+                    include: { chats: { orderBy: { createdAt: "asc" } } },
                 });
 
                 if (!conversation) {
@@ -64,327 +80,298 @@ export const AIResolvers = {
 
                 messages = conversation.chats.map(chat => ({
                     role: chat.role,
-                    content: chat.content   // this is your stored Json — see bug 2 for what shape it should be
+                    content: chat.content,
                 }));
-
-
             } else {
-                const newAIconversation = await context.prisma.aIConversation.create({
+                newAIconversation = await context.prisma.aIConversation.create({
                     data: {
                         userId: context.userId!,
-                        title: message.substring(0, 100) // Limit title length
-                    }
-                })
+                        title: message.substring(0, 100),
+                    },
+                });
                 AIConversationId = newAIconversation.id;
-                // throw new Error("AIConversationId is required");
             }
 
-            const messssage= await context.prisma.aIChat.create({
-
+            // ── save + append the new user message ──────────────────────────
+            const userContent = [{ type: "text", text: message }];
+            await context.prisma.aIChat.create({
                 data: {
                     aiConversationId: AIConversationId,
                     role: "user",
-                    content: [{type: "text", text: message}]
-                }
-            })
+                    content: userContent,
+                },
+            });
+            messages = [...messages, { role: "user", content: userContent }];
+            let titleResponse
+            if (newAIconversation) {
+                titleResponse = await setTitle(AIConversationId, message, context);
+            }
+            else if ( !newAIconversation && parsed.data.title == true ) {
 
-            console.log(messssage);
 
-            messages = [...messages, {role: "user", content: [{type: "text", text: message}]}];
+                titleResponse= context.prisma.aIConversation.findFirst(
+                    {
+                        where:  {id:AIConversationId},
+                        select: {title:true}
+                    }
+                )
+            }
 
+            // ── tool schemas sent to the model (plain JSON-schema form) ─────
+            // const {default: zodToJsonSchema} = await import("zod-to-json-schema");
 
-            /*const getWeatherTool = betaZodTool({
-                name: "get_weather",
-                description: "Get the current weather in a given location",
-                inputSchema: z.object({
-                    location: z.string().describe("The city and state, e.g. San Francisco, CA"),
-                    unit: z.enum(["celsius", "fahrenheit"]).default("fahrenheit").describe("Temperature unit")
-                }),
-                run: async (input) => {
-                    return JSON.stringify({
-                        temperature: "20°C" + input.unit,
-                        condition: "Sunny",
-                        location: input.location
-                    });
-                }
-            });*/
-
-            function buildSearchListingsTool(userId: string, knownListingIds: Set<string>) {
-                return betaZodTool({
+            const tools: Anthropic.Tool[] = [
+                {
                     name: "search_listings",
                     description: `Search active, non-deleted listings on the Universe marketplace.
 
-                    Listing types: secondhand, roommate, carpooling, course, job, scholarship, urgent, note.
-                    
-                    Categories (ONLY apply to type "secondhand" — pass these exact English values, do not translate them):
-                    - textbooks_and_notes: textbooks, lecture notes, study guides
-                    - electronics: laptops, phones, GPUs, monitors, cables, chargers, computer parts
-                    - dorm_and_housing: furniture, lighting, storage, room decor, appliances (fridges, kettles, microwaves)
-                    - kitchenware: cookware, utensils, small kitchen appliances
-                    - department_materials: lab equipment, engineering/design tools, department-specific supplies
-                    - transportation: bikes, scooters, transit-related items
-                    - clothing: clothes, shoes, accessories
-                    - hobbies_and_gaming: games, gaming gear, sports equipment, hobby supplies
-                    - other: anything not covered above
-                    
-                    Use "categories" to filter by one or more of these when the request is clearly about buying/selling a physical secondhand item. Skip category filtering entirely for other listing types (roommate, carpooling, course, job, scholarship, urgent, note) — filter those using "type" instead.
-                    
-                    The "query" parameter searches listing title and description text directly (substring match) — these fields are written in TURKISH by users, so always translate the search intent into Turkish keywords before calling this tool, regardless of what language the user wrote in. Category and type values, by contrast, must stay in English exactly as listed above — never translate those.
-                    
-                    You can call this tool multiple times in one turn (e.g. different categories, or a category search plus a broader keyword-only search) if a user's need could span more than one type of listing.
-                    
-                    If a search returns no or very few results, retry with a broader or different keyword before concluding nothing is available.`,
-                    inputSchema: searchListingsSchema,
-                    run: async (input) => {
+                Listing types: secondhand, roommate, carpooling, course, job, scholarship, urgent, note.
+                
+                Categories (ONLY apply to type "secondhand" — pass these exact English values, do not translate them):
+                - textbooks_and_notes: textbooks, lecture notes, study guides
+                - electronics: laptops, phones, GPUs, monitors, cables, chargers, computer parts
+                - dorm_and_housing: furniture, lighting, storage, room decor, appliances (fridges, kettles, microwaves)
+                - kitchenware: cookware, utensils, small kitchen appliances
+                - department_materials: lab equipment, engineering/design tools, department-specific supplies
+                - transportation: bikes, scooters, transit-related items
+                - clothing: clothes, shoes, accessories
+                - hobbies_and_gaming: games, gaming gear, sports equipment, hobby supplies
+                - other: anything not covered above
+                
+                IMPORTANT: keyword ('query') matching is literal substring matching and often misses relevant listings (e.g. searching 'ekran kartı' will NOT match a listing titled 'rtx 3070ti'). Prefer filtering by 'categories' and 'type' as your primary method, since those are reliable. Use 'query' only to further narrow results within a category, not as your main search strategy. When you do use 'query', translate the intent into Turkish keywords, since listing text is Turkish.
+                
+                You can call this tool multiple times in one turn. If a search returns no or very few results, retry with a broader query or just browse the category with no keyword before concluding nothing is available.`,
+                    input_schema: toJSONSchema(searchListingsSchema) as any,
+                },
+                {
+                    name: "get_listing",
+                    description: `Retrieve full current details of one specific listing by its exact ID. Use this when the user references a specific listing already seen earlier in this conversation. Only use IDs that actually appeared in a prior search result or tool call in this conversation — never guess or invent one.`,
+                    input_schema: toJSONSchema(getListingSchema) as any,
+                },
+                {
+                    name: "present_listings",
+                    description: `Show one or more listings to the user as visual cards in the chat. Call this when you have listings the user should see, instead of describing them in plain text. Provide listing IDs (from prior search_listings or get_listing results), an optional short note per listing, a 'messageBefore' introducing them, and an optional 'messageAfter'. Do not paste listing details into the messages — the cards show that.`,
+                    input_schema: toJSONSchema(presentListingsSchema) as any,
+                },
+            ];
 
+            // ── the dispatcher: runs your tool logic by name ────────────────
+            async function runTool(name: string, input: any): Promise<{ content: string; isError: boolean }> {
+                try {
+                    if (name === "search_listings") {
                         console.log("search_listings called with:", input);
-
                         const conditions: any[] = [
-                            {status: "active"},
-                            {is_deleted: false},
-                            {ownerId: {not: userId}},   // never suggest the user their own listing
-                            {OR: [{expires: {gt: new Date()}}, {expires: null}]},
+                            { status: "active" },
+                            { is_deleted: false },
+                            { ownerId: { not: context.userId! } },
+                            { OR: [{ expires: { gt: new Date() } }, { expires: null }] },
                         ];
-
                         if (input.query) {
                             conditions.push({
                                 OR: [
-                                    {title: {contains: input.query, mode: "insensitive"}},
-                                    {description: {contains: input.query, mode: "insensitive"}},
+                                    { title: { contains: input.query, mode: "insensitive" } },
+                                    { description: { contains: input.query, mode: "insensitive" } },
                                 ],
                             });
                         }
-                        if (input.categories?.length) {
-                            conditions.push({category: {in: input.categories}});
-                        }
-                        if (input.type) conditions.push({type: input.type});
-                        if (input.condition) conditions.push({condition: input.condition});
+                        if (input.categories?.length) conditions.push({ category: { in: input.categories } });
+                        if (input.type) conditions.push({ type: input.type });
+                        if (input.condition) conditions.push({ condition: input.condition });
                         if (input.minPrice !== undefined || input.maxPrice !== undefined) {
                             conditions.push({
                                 price: {
-                                    ...(input.minPrice !== undefined ? {gte: input.minPrice} : {}),
-                                    ...(input.maxPrice !== undefined ? {lte: input.maxPrice} : {}),
+                                    ...(input.minPrice !== undefined ? { gte: input.minPrice } : {}),
+                                    ...(input.maxPrice !== undefined ? { lte: input.maxPrice } : {}),
                                 },
                             });
                         }
-
                         const results = await context.prisma.listing.findMany({
-                            where: {AND: conditions},
-                            orderBy: {createdAt: "desc"},
-                            take: input.limit,
+                            where: { AND: conditions },
+                            orderBy: { createdAt: "desc" },
+                            take: input.limit ?? 8,
                             select: {
                                 id: true, title: true, description: true, price: true,
                                 category: true, subcategory: true, condition: true,
                                 type: true, location: true, photos: true,
                             },
                         });
-
-                        results.forEach(r => knownListingIds.add(r.id));  // for presentListings validation later
+                        results.forEach(r => knownListingIds.add(r.id));
                         console.log("search_listings returned:", results.length, "results");
+                        return {
+                            content: JSON.stringify(results.map(r => ({ ...r, description: r.description.slice(0, 200) }))),
+                            isError: false,
+                        };
+                    }
 
-                        return JSON.stringify(
-                            results.map(r => ({
-                                ...r,
-                                description: r.description.slice(0, 200),
-                                condition: r.condition ? conditionTR[r.condition] : null,
-                                type: typeTR[r.type],
-                            }))
-                        );
-                    },
-                });
-            }
-
-            function getListingTool(knownListingIds: Set<string>) {
-                return betaZodTool({
-                    name: "get_listing",
-                    description: `Retrieve full current details of one specific listing by its exact ID.
-                     Use this when the user references a specific listing already seen earlier in this conversation 
-                     (e.g. "the second one," "that laptop you showed me") — always resolve their reference to the real
-                     listing ID from conversation history first, then call this to get fresh, up-to-date details (price,
-                     availability, condition may have changed since it was first shown). Do not guess or invent an ID — only
-                     use IDs that actually appeared in a prior search result or tool call in this conversation.
-                        
-                     IMPORTANT: keyword ('query') matching is literal substring matching and often misses relevant listings 
-                     (e.g. searching 'ekran kartı' will NOT match a listing titled 'rtx 3070ti'). Prefer filtering by 
-                     'categories' and 'type' as your primary method, since those are reliable. Use 'query' only to 
-                     further narrow results within a category, not as your main search strategy.
-                      `,
-                    inputSchema: getListingSchema,
-                    run: async (input) => {
+                    if (name === "get_listing") {
                         const listing = await context.prisma.listing.findUnique({
-                            where: {id: input.id},
+                            where: { id: input.id },
                             select: {
                                 id: true, title: true, description: true, price: true,
                                 category: true, subcategory: true, condition: true,
                                 type: true, location: true, photos: true,
                             },
                         });
-
-                        if (!listing) {
-                            throw new Error("Listing not found");
-                        }
-
+                        if (!listing) return { content: "Listing not found.", isError: true };
                         knownListingIds.add(listing.id);
+                        return { content: JSON.stringify(listing), isError: false };
+                    }
 
-                        return JSON.stringify({...listing, type: typeTR[listing.type]});
-                    },
-                });
-            }
-
-            function presentListingsTool(knownListingIds: Set<string>) {
-                return betaZodTool({
-                    name: "present_listings",
-                    description: `Show one or more listings to the user as visual cards in the chat. 
-                    Call this when you have found listings the user should see, instead of describing them in plain text.
-                    You provide the listing IDs (which must come from prior search_listings or get_listing results in 
-                    this conversation), an optional short note per listing explaining why it fits, a 'messageBefore' 
-                    introducing the listings, and an optional 'messageAfter' with follow-up thoughts. The listings
-                    render as cards between the two messages — never paste listing details into the message text 
-                    yourself, just reference the IDs.`,
-                    inputSchema: presentListingsSchema,
-                    run: async (input) => {
-                        // Reject any ID that wasn't seen earlier in the conversation
-                        const validListings = input.listings.filter(l => knownListingIds.has(l.id));
+                    if (name === "present_listings") {
+                        const validListings = input.listings.filter((l: any) => knownListingIds.has(l.id));
                         if (!validListings.length) {
-                            throw new Error("None of the provided listing IDs are valid. Only use IDs from prior search results.");
+                            return {
+                                content: "None of the provided listing IDs are valid. Only use IDs from prior search results.",
+                                isError: true,
+                            };
                         }
-
-                        const listings = await context.prisma.listing.findMany({
-                            where: { id: { in: validListings.map(l => l.id) } },
-                            select: {
-                                id: true, title: true, description: true, price: true,
-                                category: true, subcategory: true, condition: true,
-                                type: true, location: true, photos: true,
-                            },
+                        const found = await context.prisma.listing.findMany({
+                            where: { id: { in: validListings.map((l: any) => l.id) } },
+                            select: { id: true },
                         });
-
-                        const foundIds = new Set(listings.map(l => l.id));
-                        const deadIds = validListings.filter(l => !foundIds.has(l.id)).map(l => l.id);
-                        if (deadIds.length) {
-                            console.log("Dead listings skipped:", deadIds);
+                        const foundIds = new Set(found.map(l => l.id));
+                        const surviving = validListings.filter((l: any) => foundIds.has(l.id));
+                        const dead = validListings.filter((l: any) => !foundIds.has(l.id));
+                        if (!surviving.length) {
+                            return { content: "All requested listings are no longer available.", isError: true };
                         }
-
-                        // Only throw if EVERYTHING is gone — otherwise present what survived
-                        if (!listings.length) {
-                            throw new Error("All requested listings are no longer available.");
-                        }
-
-                        const survivingListings = validListings.filter(l => foundIds.has(l.id));
-                        presentedListings = survivingListings;
+                        presentedListings = surviving;
                         presentedMessages = { before: input.messageBefore, after: input.messageAfter };
+                        return {
+                            content: `Presented ${surviving.length} listing(s).${dead.length ? ` ${dead.length} skipped (no longer available).` : ""}`,
+                            isError: false,
+                        };
+                    }
 
-                        return `Presented ${survivingListings.length} listing(s).${deadIds.length ? ` ${deadIds.length} skipped (no longer available).` : ""}`;
-
-                    },
-                });
+                    return { content: `Unknown tool: ${name}`, isError: true };
+                } catch (e) {
+                    return {
+                        content: `Tool error: ${e instanceof Error ? e.message : String(e)}`,
+                        isError: true,
+                    };
+                }
             }
-            let name:string|null=null;
-            if (context.user && context.user.name) {
-                name = context.user.name;
-            }
 
+            // ── system prompt ───────────────────────────────────────────────
+            let name: string | null = null;
+            if (context.user && context.user.name) name = context.user.name;
             const namePart = name
-                ? `The user you're talking to is named ${name}. You may address them by name occasionally, but naturally — don't force it into every message.`
+                ? `The user you're talking to is named ${name}. You may address them by name occasionally, but naturally — don't force it.`
                 : "";
 
-            let finalMessage: BetaMessage;
-            let runner: any;
-
-
             const systemPrompt = `You are MTBot, a marketplace assistant for Universe, a platform where students at Turkish universities buy and sell secondhand items, find roommates, carpool, and share courses/notes/job postings.
-            
-            Your job is to help students find relevant listings on the platform. You have real, working tools to search and look up listings — use them actively, not just when explicitly asked to search.
+
+            Your job is to help students find relevant listings. You have real, working tools — use them actively.
             
             When to search:
-            - Whenever a user describes a need or problem that could plausibly be solved by something on the platform — even if they haven't explicitly asked to buy or search — call search_listings before answering. Infer the likely category or listing type from the problem they describe; don't wait for an explicit "do you have X" request.
-            - If a user references a specific listing from earlier in the conversation, use get_listing with its real ID to fetch current details — never describe a listing from memory alone.
-            
-            How to search:
-            - Category and listing-type values must always be passed in English exactly as defined in the search tool (e.g. "electronics", "secondhand") — never translate these.
-            - Free-text keywords (the "query" parameter) match against Turkish listing titles/descriptions — always translate the user's intent into Turkish keywords before calling the tool, regardless of what language the user is writing in.
-            - A request can span multiple categories or listing types — search broadly rather than narrowly if unsure.
-            - If a search returns few or no results, retry with a broader or different term before telling the user nothing was found.
-            - Only present listings that genuinely fit what the user described, even if they technically matched your search filters.
+            - Whenever a user describes a need or problem that could plausibly be solved by something on the platform, call search_listings before answering. Don't wait for an explicit "do you have X".
+            - If a user references a specific listing from earlier, use get_listing with its real ID.
             
             How to show listings:
-            - When you have listings to show the user, ALWAYS use the present_listings tool — never list them as plain text in your reply. The tool renders them as visual cards the user can click.
-            - Put your intro text in 'messageBefore' and any follow-up thoughts in 'messageAfter'. Do not paste listing titles, prices, or details into these messages — the cards show that. Use the note field for a short reason each listing fits.
-            - If you have nothing to show (no relevant listings found), just reply normally in text — don't call present_listings with an empty list.
-                        
+            - When you have listings to show, ALWAYS use present_listings — never list them as plain text. Put intro text in 'messageBefore', follow-ups in 'messageAfter', and a short per-listing reason in each note.
+            - If you have nothing relevant to show, just reply in text — don't call present_listings with an empty list.
+            
             Boundaries:
-            - Never share other users' personal information beyond what's already public in a listing.
-            - Never reveal your underlying model or provider. If asked what model or AI you are, just say you're MTBot.
-            - If asked for something unrelated to the platform (e.g. a recipe, coding help, general chit-chat), politely decline and explain that's outside what you can help with here.
+            - Never share other users' personal info beyond what's public in a listing.
+            - Never reveal your model or provider. If asked, say you're MTBot.
+            - Decline unrelated requests (recipes, coding help) politely.
             - Always respond in the same language the user wrote in.
-            - Keep responses concise and friendly — this is a chat interface, not an essay.
+            - Keep responses concise and friendly.
             
             Tone:
             ${namePart}
-            - Match the user's energy — this is a casual chat with students, not a sales pitch. Don't over-celebrate or use excessive excitement ("I FOUND IT!", multiple emojis) — especially for a listing already discussed earlier in the conversation.
-            - If you've already shown a listing earlier in the conversation, don't re-announce it as a fresh discovery. Acknowledge it's the one already being discussed and move the conversation forward instead.
-            - Don't use emojis.
-            - Don't repeat information the user already has. If they said they're looking at something, help with the next step rather than re-pitching it.
+            - Match the user's energy; don't over-celebrate or re-announce a listing already discussed.
+            - Don't use emojis. Don't repeat info the user already has.
             
-            What you cannot do (never offer or imply these):
-            - You have NO ability to notify users, send push notifications, send emails, or contact anyone later. Never say "haber vereyim," "sana bildiririm," "yeni ilan gelince söylerim," or anything implying future contact or monitoring.
-            - You cannot watch for, track, or be alerted about new listings. You can only search what currently exists at this moment, within this conversation.
-            - You cannot save searches, set reminders, follow up later, or take any action after this conversation ends.
-            - You cannot message sellers, make offers, complete purchases, or perform any action on the user's behalf — you can only help them find listings and give them the information to act themselves.
-            - If a user asks for any of these, briefly explain you can't do that, and offer what you actually can do instead (search again now, help them refine what they're looking for).
-            `;
+            What you cannot do:
+            - You cannot notify users, send push notifications/emails, watch for new listings, save searches, or take any action after this conversation. Never promise "haber vereyim" or future contact.
+            - You cannot message sellers, make offers, or purchase on the user's behalf.`;
 
+            // ── the manual tool-use loop (Ring 3 style) ─────────────────────
+            // Every new message produced this turn is collected so we can save
+            // the FULL turn (tool_use + tool_result included) to the DB.
+            const newTurnMessages: any[] = [];
+
+            let response: Anthropic.Message;
             try {
-                runner = await client.beta.messages.toolRunner({
+                response = await client.messages.create({
                     model: "claude-sonnet-5",
                     max_tokens: 1024,
-                    tools: [
-                        buildSearchListingsTool(context.userId!, knownListingIds),
-                        getListingTool(knownListingIds),
-                        presentListingsTool(knownListingIds)
-                    ],
                     system: systemPrompt,
+                    tools,
                     messages,
                 });
-
-                finalMessage = await runner;
-
-                console.log("runner keys:", Object.keys(runner));
-                console.log("runner methods:", Object.getOwnPropertyNames(Object.getPrototypeOf(runner)));
-
-
-                for (const block of finalMessage.content) {
-                    if (block.type === "text") {
-                        console.log(block.text);
-                    }
-                }
             } catch (e) {
                 console.error("AI request failed:", e);
-                throw new Error(
-                    `AI response generation failed: ${e instanceof Error ? e.message : String(e)}`
-                );
+                throw new Error(`AI response generation failed: ${e instanceof Error ? e.message : String(e)}`);
             }
 
-            console.log(Object.keys(finalMessage))
+            while (response.stop_reason === "tool_use") {
+                // record the assistant turn (contains tool_use blocks)
+                const assistantContent = response.content;
+                messages.push({ role: "assistant", content: assistantContent });
+                newTurnMessages.push({ role: "assistant", content: assistantContent });
 
+                // run every tool_use block, collect results
+                const toolResults: any[] = [];
+                for (const block of response.content) {
+                    if (block.type === "tool_use") {
+                        const { content, isError } = await runTool(block.name, block.input);
+                        toolResults.push({
+                            type: "tool_result",
+                            tool_use_id: block.id,
+                            content,
+                            ...(isError ? { is_error: true } : {}),
+                        });
+                    }
+                }
+
+                // record the user turn (contains tool_result blocks)
+                messages.push({ role: "user", content: toolResults });
+                newTurnMessages.push({ role: "user", content: toolResults });
+
+                // ask the model to continue
+                try {
+                    response = await client.messages.create({
+                        model: "claude-sonnet-5",
+                        max_tokens: 1024,
+                        system: systemPrompt,
+                        tools,
+                        messages,
+                    });
+                } catch (e) {
+                    console.error("AI request failed:", e);
+                    throw new Error(`AI response generation failed: ${e instanceof Error ? e.message : String(e)}`);
+                }
+            }
+
+            // the final assistant message (text, no more tool calls)
+            messages.push({ role: "assistant", content: response.content });
+            newTurnMessages.push({ role: "assistant", content: response.content });
+
+            // ── persist every new message from this turn ────────────────────
+            for (const m of newTurnMessages) {
+                await context.prisma.aIChat.create({
+                    data: {
+                        aiConversationId: AIConversationId,
+                        role: m.role,
+                        content: JSON.parse(JSON.stringify(m.content)),
+                    },
+                });
+            }
+
+            // ── assemble the frontend response ──────────────────────────────
             let listingsForFrontend: any[] = [];
             let replyText: string;
             let replyAfter: string | null = null;
 
             if (presentedMessages) {
                 const msgs = presentedMessages as { before: string; after?: string };
-
                 const ids = presentedListings.map(p => p.id);
-
                 const fullListings = await context.prisma.listing.findMany({
-                    where: {
-                        id: { in: ids },
-                        status: "active",
-                        is_deleted: false,
-                    },
+                    where: { id: { in: ids }, status: "active", is_deleted: false },
                 });
-
                 const byId = new Map(fullListings.map(l => [l.id, l]));
-
                 listingsForFrontend = presentedListings
                     .map(p => {
                         const listing = byId.get(p.id);
@@ -392,33 +379,22 @@ export const AIResolvers = {
                         return { listing, note: p.note ?? null };
                     })
                     .filter(Boolean);
-
                 replyText = msgs.before;
                 replyAfter = msgs.after ?? null;
             } else {
-                // normal chat turn, no listings
-                replyText = finalMessage.content
-                    .filter(block => block.type === "text")
-                    .map(block => block.text)
+                replyText = response.content
+                    .filter((block: any) => block.type === "text")
+                    .map((block: any) => block.text)
                     .join("\n");
             }
 
-            await context.prisma.aIChat.create({
-                data: {
-                    aiConversationId: AIConversationId,
-                    role: "assistant",
-                    content: JSON.parse(JSON.stringify(finalMessage.content))
-                }
-            });
-
             return {
-                aiConversationId: AIConversationId,
-                message: replyText,
-                messageAfter: replyAfter,
-                listings: listingsForFrontend,
+                aiConversationId:   AIConversationId,
+                message:            replyText,
+                messageAfter:       replyAfter,
+                listings:           listingsForFrontend,
+                title:              titleResponse,
             };
-
-
-        }
+        },
     },
-}
+};

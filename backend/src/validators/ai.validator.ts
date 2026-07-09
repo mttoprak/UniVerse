@@ -4,6 +4,7 @@ import { z } from "zod"
 export const askAIChatSchema = z.object({
     message:          z.string().min(1),
     aiConversationId: z.string().uuid().nullish(),
+    title:            z.boolean().optional(),
 })
 
 // ─── SEARCH LISTINGS ─────────────────────────────────────────────────────────
