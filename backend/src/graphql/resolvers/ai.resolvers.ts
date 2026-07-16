@@ -41,10 +41,162 @@ async function setTitle(AIConversationId: string, input: string, context: GraphQ
 }
 
 export const AIResolvers = {
+
+    Query: {
+
+        // ── 1. Preview list: the sidebar ────────────────────────────────
+        aiConversationPreviews: async (_p: any, _a: any, context: GraphQLContext) => {
+            checkStudentOnly(context);
+
+            const conversations = await context.prisma.aIConversation.findMany({
+                where: { userId: context.userId! },
+                orderBy: { updatedAt: "desc" },
+                select: { id: true, title: true, updatedAt: true },
+            });
+
+            return {
+                conversations: conversations.map(c => ({
+                    aiConversationId: c.id,
+                    title: c.title,
+                    updatedAt: c.updatedAt.toISOString(),
+                })),
+            };
+        },
+
+        // ── 2. Load one conversation, transformed for display ───────────
+        aiConversationHistory: async (_p: any, args: { aiConversationId: string }, context: GraphQLContext) => {
+            checkStudentOnly(context);
+
+            // ownership-scoped fetch (same IDOR guard as the live chat)
+            const conversation = await context.prisma.aIConversation.findFirst({
+                where: { id: args.aiConversationId, userId: context.userId! },
+                include: { chats: { orderBy: { createdAt: "asc" } } },
+            });
+            if (!conversation) throw new Error("AIConversationId is invalid");
+
+            // ---- pass 1: gather every listing id that was ever presented ----
+            // (so we can batch-fetch them once, then re-hydrate cards)
+            const presentedIdSet = new Set<string>();
+            for (const chat of conversation.chats) {
+                const content = chat.content as any[];
+                if (!Array.isArray(content)) continue;
+                for (const block of content) {
+                    if (block?.type === "tool_use" && block?.name === "present_listings") {
+                        const ls = block.input?.listings ?? [];
+                        for (const l of ls) if (l?.id) presentedIdSet.add(l.id);
+                    }
+                }
+            }
+
+            // batch fetch all those listings once (only active/live ones survive)
+            const fetched = presentedIdSet.size
+                ? await context.prisma.listing.findMany({
+                    where: { id: { in: [...presentedIdSet] }, status: "active", is_deleted: false },
+                })
+                : [];
+            const listingById = new Map(fetched.map(l => [l.id, l]));
+
+            // ---- pass 2: build clean display messages ----------------------
+            const messages: any[] = [];
+
+            for (const chat of conversation.chats) {
+                const content = chat.content as any[];
+                if (!Array.isArray(content)) continue;
+
+                if (chat.role === "user") {
+                    // A user row is EITHER a real user message (text block)
+                    // OR tool_result plumbing (skip those entirely).
+                    const isToolResult = content.some(b => b?.type === "tool_result");
+                    if (isToolResult) continue; // plumbing, user never saw it
+
+                    const text = content
+                        .filter(b => b?.type === "text")
+                        .map(b => b.text)
+                        .join("\n")
+                        .trim();
+                    if (text) messages.push({ role: "user", text, listings: [] });
+                    continue;
+                }
+
+                if (chat.role === "assistant") {
+                    // pull visible text (ignore thinking blocks)
+                    const text = content
+                        .filter(b => b?.type === "text")
+                        .map(b => b.text)
+                        .join("\n")
+                        .trim();
+
+                    // did this turn present listings?
+                    const presentBlock = content.find(
+                        b => b?.type === "tool_use" && b?.name === "present_listings"
+                    );
+
+                    if (presentBlock) {
+                        const input = presentBlock.input ?? {};
+                        const requested: { id: string; note?: string }[] = input.listings ?? [];
+
+                        // rebuild cards in the model's original order, drop any now-gone
+                        const listings = requested
+                            .map(r => {
+                                const listing = listingById.get(r.id);
+                                if (!listing) return null;
+                                return { listing, note: r.note ?? null };
+                            })
+                            .filter(Boolean);
+
+                        // the visible text for a present turn lived in messageBefore/After
+                        const before = (input.messageBefore ?? "").trim();
+                        // messageAfter is shown below cards; fold it into one text field
+                        // (or add a separate field if your UI wants them split)
+                        const combinedText = before || text || null;
+
+                        messages.push({
+                            role: "assistant",
+                            text: combinedText,
+                            listings,
+                        });
+
+                        // if there was messageAfter, emit it as a trailing assistant text
+                        const after = (input.messageAfter ?? "").trim();
+                        if (after) {
+                            messages.push({ role: "assistant", text: after, listings: [] });
+                        }
+                        continue;
+                    }
+
+                    // plain assistant text turn (no listings). Skip pure tool_use
+                    // rows that have no visible text (internal search steps).
+                    if (text) {
+                        messages.push({ role: "assistant", text, listings: [] });
+                    }
+                    continue;
+                }
+            }
+
+            return {
+                aiConversationId: conversation.id,
+                messages,
+            };
+        },
+    },
+
+
     Mutation: {
         askChatbot: async (_parent: any, args: { input: any }, context: GraphQLContext) => {
 
             checkStudentOnly(context);
+
+            // ── validate input ──────────────────────────────────────────────
+
+            const parsed = askAIChatSchema.safeParse(args.input);
+            if (!parsed.success) {
+                throw new Error("Geçersiz girdi: " + JSON.stringify(z.treeifyError(parsed.error)));
+            }
+            if (!parsed.data.message) {
+                throw new Error("Message is required");
+            }
+
+            const message = parsed.data.message;
 
             let newAIconversation: any = null;
             let AIConversationId: string;
@@ -54,16 +206,6 @@ export const AIResolvers = {
             const knownListingIds = new Set<string>();
             let presentedListings: { id: string; note?: string }[] = [];
             let presentedMessages: { before: string; after?: string } | null = null;
-
-            // ── validate input ──────────────────────────────────────────────
-            const parsed = askAIChatSchema.safeParse(args.input);
-            if (!parsed.success) {
-                throw new Error("Geçersiz girdi: " + JSON.stringify(z.treeifyError(parsed.error)));
-            }
-            if (!parsed.data.message) {
-                throw new Error("Message is required");
-            }
-            const message = parsed.data.message;
 
             // ── load or create conversation ─────────────────────────────────
             if (parsed.data.aiConversationId) {

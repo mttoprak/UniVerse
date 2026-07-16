@@ -130,8 +130,14 @@ export default function FeedPage() {
     };
 
     const formatDate = (dateString: string) => {
+        // PostgreSQL timestamps arrive as Unix-millisecond strings (e.g. "1782828794004").
+        // new Date("1782828794004") fails to parse — it must be a number.
+        const ms = Number(dateString);
+        const date = Number.isNaN(ms) ? new Date(dateString) : new Date(ms);
+        if (Number.isNaN(date.getTime())) return 'Tarih Yok';
+
         const options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' };
-        return new Date(dateString).toLocaleDateString('tr-TR', options);
+        return date.toLocaleDateString('tr-TR', options);
     };
 
     const getCategoryName = (advert: Advert) => {

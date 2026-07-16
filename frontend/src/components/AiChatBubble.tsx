@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter, usePathname } from 'next/navigation';
 import { gql } from '@apollo/client';
-import { useMutation } from '@apollo/client/react';
-import { Sparkles, X, Send, MapPin, Tag, BadgeCheck, Plus } from 'lucide-react';
+import { useMutation, useQuery, useLazyQuery } from '@apollo/client/react';
+import { Sparkles, X, Send, MapPin, Tag, BadgeCheck, Plus, Maximize2, History, Loader2, MessageSquare, ChevronDown } from 'lucide-react';
 
 /* ---------------- GraphQL ---------------- */
 
@@ -27,13 +28,51 @@ const ASK_CHATBOT = gql`
                     condition
                     category
                     photos
-                    owner {
+                    owner { id username name surname profile_photo is_verified }
+                }
+            }
+        }
+    }
+`;
+
+const GET_ME = gql`
+    query GetMe {
+        getMe { id username name surname }
+    }
+`;
+
+export const AI_CONVERSATION_PREVIEWS = gql`
+    query AiConversationPreviews {
+        aiConversationPreviews {
+            conversations {
+                aiConversationId
+                title
+                updatedAt
+            }
+        }
+    }
+`;
+
+export const AI_CONVERSATION_HISTORY = gql`
+    query AiConversationHistory($aiConversationId: ID!) {
+        aiConversationHistory(aiConversationId: $aiConversationId) {
+            aiConversationId
+            messages {
+                role
+                text
+                listings {
+                    note
+                    listing {
                         id
-                        username
-                        name
-                        surname
-                        profile_photo
-                        is_verified
+                        title
+                        description
+                        price
+                        location
+                        type
+                        condition
+                        category
+                        photos
+                        owner { id username name surname profile_photo is_verified }
                     }
                 }
             }
@@ -43,7 +82,7 @@ const ASK_CHATBOT = gql`
 
 /* ---------------- Types ---------------- */
 
-interface Owner {
+export interface Owner {
     id: string;
     username?: string | null;
     name?: string | null;
@@ -52,7 +91,7 @@ interface Owner {
     is_verified?: boolean | null;
 }
 
-interface ChatListing {
+export interface ChatListing {
     id: string;
     title: string;
     description?: string | null;
@@ -65,7 +104,7 @@ interface ChatListing {
     owner?: Owner | null;
 }
 
-interface PresentedListing {
+export interface PresentedListing {
     note?: string | null;
     listing: ChatListing;
 }
@@ -78,20 +117,34 @@ interface AIResponse {
     listings: PresentedListing[];
 }
 
-interface AskChatbotResult {
-    askChatbot: AIResponse;
+interface AskChatbotResult { askChatbot: AIResponse; }
+interface AskChatbotVars { input: { message: string; aiConversationId?: string }; }
+
+interface GetMeResult {
+    getMe: { id: string; username?: string | null; name?: string | null; surname?: string | null } | null;
 }
 
-interface AskChatbotVars {
-    input: {
-        message: string;
-        aiConversationId?: string;
-    };
+export interface ConversationPreview {
+    aiConversationId: string;
+    title?: string | null;
+    updatedAt: string;
+}
+export interface PreviewsResult {
+    aiConversationPreviews: { conversations: ConversationPreview[] };
 }
 
-type Role = 'user' | 'ai';
+export interface HistoryMessage {
+    role: string;                 // "user" | "assistant"
+    text?: string | null;
+    listings: PresentedListing[];
+}
+export interface HistoryResult {
+    aiConversationHistory: { aiConversationId: string; messages: HistoryMessage[] };
+}
 
-interface UIMessage {
+export type Role = 'user' | 'ai';
+
+export interface UIMessage {
     id: string;
     role: Role;
     text: string;
@@ -99,9 +152,18 @@ interface UIMessage {
     listings?: PresentedListing[];
 }
 
-/* ---------------- Helpers ---------------- */
+/* ---------------- Shared handoff (imported by /AI page) ---------------- */
 
-const CONDITION_LABELS: Record<string, string> = {
+export const AI_HANDOFF_KEY = 'ai_chat_handoff';
+export interface AiHandoff {
+    conversationId: string | null;
+    conversationTitle: string | null;
+    messages: UIMessage[];
+}
+
+/* ---------------- Shared helpers (exported for reuse on /AI) ---------------- */
+
+export const CONDITION_LABELS: Record<string, string> = {
     new: 'Sıfır',
     like_new: 'Sıfır Gibi',
     good: 'İyi',
@@ -109,26 +171,46 @@ const CONDITION_LABELS: Record<string, string> = {
     used: 'Kullanılmış',
 };
 
-const THINKING_STEPS = [
+export const THINKING_STEPS = [
     'Düşünüyorum...',
     'İlanları tarıyorum...',
     'En uygun seçenekleri buluyorum...',
     'Neredeyse hazır...',
 ];
 
-const formatPrice = (price?: number | null) =>
+// Reusable scrollbar classes so every scroll area matches the cyber theme.
+export const SCROLLBAR_CYAN =
+    '[&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-cyan-500/30 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-cyan-500/50 [scrollbar-width:thin] [scrollbar-color:rgba(34,211,238,0.3)_transparent]';
+export const SCROLLBAR_GRAY =
+    '[&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-white/20 [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.1)_transparent]';
+
+export const formatPrice = (price?: number | null) =>
     price ? `${Number(price).toLocaleString('tr-TR')} ₺` : 'Ücretsiz';
 
-const ownerDisplayName = (owner?: Owner | null) => {
+export const ownerDisplayName = (owner?: Owner | null) => {
     if (!owner) return null;
     if (owner.username) return `@${owner.username}`;
     const full = [owner.name, owner.surname].filter(Boolean).join(' ');
     return full || null;
 };
 
-/* ---------------- Listing Card ---------------- */
+export const historyToUIMessages = (msgs: HistoryMessage[]): UIMessage[] =>
+    msgs.map((m) => ({
+        id: crypto.randomUUID(),
+        role: m.role === 'user' ? 'user' : 'ai',
+        text: m.text || '',
+        listings: m.listings,
+    }));
 
-function ListingCard({ item }: { item: PresentedListing }) {
+export const formatConvDate = (iso: string) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
+};
+
+/* ---------------- Listing Card (exported for /AI reuse) ---------------- */
+
+export function ListingCard({ item }: { item: PresentedListing }) {
     const l = item.listing;
     const photo = l.photos?.[0];
     const ownerName = ownerDisplayName(l.owner);
@@ -166,9 +248,7 @@ function ListingCard({ item }: { item: PresentedListing }) {
                     {ownerName && (
                         <div className="flex items-center gap-1 mt-1.5 min-w-0">
                             <span className="text-[11px] text-gray-500 truncate">{ownerName}</span>
-                            {l.owner?.is_verified && (
-                                <BadgeCheck size={12} className="text-cyan-400 shrink-0" />
-                            )}
+                            {l.owner?.is_verified && <BadgeCheck size={12} className="text-cyan-400 shrink-0" />}
                         </div>
                     )}
                 </div>
@@ -187,6 +267,9 @@ function ListingCard({ item }: { item: PresentedListing }) {
 /* ---------------- Main Widget ---------------- */
 
 export default function AiChatBubble() {
+    const router = useRouter();
+    const pathname = usePathname();
+
     const [isOpen, setIsOpen] = useState(false);
     const [input, setInput] = useState('');
     const [messages, setMessages] = useState<UIMessage[]>([]);
@@ -197,18 +280,32 @@ export default function AiChatBubble() {
     const scrollRef = useRef<HTMLDivElement>(null);
 
     const [askChatbot, { loading }] = useMutation<AskChatbotResult, AskChatbotVars>(ASK_CHATBOT);
+    const { data: meData } = useQuery<GetMeResult>(GET_ME);
+    const firstName = meData?.getMe?.name || meData?.getMe?.username || null;
 
-    // Auto-scroll to newest
+    // Previews load when the panel opens.
+    const [loadPreviews, { data: previewsData, loading: previewsLoading }] =
+        useLazyQuery<PreviewsResult>(AI_CONVERSATION_PREVIEWS, { fetchPolicy: 'network-only' });
+    const [loadHistory, { loading: historyLoading }] =
+        useLazyQuery<HistoryResult>(AI_CONVERSATION_HISTORY, { fetchPolicy: 'network-only' });
+
+    const previews = previewsData?.aiConversationPreviews?.conversations ?? [];
+
+    // The recent list is visible when NOT actively in a conversation.
+    // It "collapses" the moment there are messages on screen.
+    const showRecent = messages.length === 0 && !loading && !historyLoading;
+
+    // Load previews once whenever the panel is opened fresh.
+    useEffect(() => {
+        if (isOpen) loadPreviews();
+    }, [isOpen, loadPreviews]);
+
     useEffect(() => {
         scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
     }, [messages, loading]);
 
-    // Cycle the thinking status text
     useEffect(() => {
-        if (!loading) {
-            setThinkingStep(0);
-            return;
-        }
+        if (!loading) { setThinkingStep(0); return; }
         const interval = setInterval(() => {
             setThinkingStep((prev) => (prev + 1) % THINKING_STEPS.length);
         }, 2000);
@@ -220,16 +317,34 @@ export default function AiChatBubble() {
         setConversationId(null);
         setConversationTitle(null);
         setInput('');
+        loadPreviews(); // refresh recent list
+    };
+
+    const selectConversation = async (conv: ConversationPreview) => {
+        try {
+            const { data } = await loadHistory({ variables: { aiConversationId: conv.aiConversationId } });
+            const hist = data?.aiConversationHistory;
+            if (!hist) return;
+            setConversationId(hist.aiConversationId);
+            setConversationTitle(conv.title || 'Sohbet');
+            setMessages(historyToUIMessages(hist.messages));
+        } catch { /* retry allowed */ }
+    };
+
+    const openFullPage = () => {
+        const handoff: AiHandoff = { conversationId, conversationTitle, messages };
+        try {
+            sessionStorage.setItem(AI_HANDOFF_KEY, JSON.stringify(handoff));
+        } catch { /* storage unavailable */ }
+        setIsOpen(false);
+        router.push('/AI');
     };
 
     const handleSend = async () => {
         const text = input.trim();
         if (!text || loading) return;
 
-        setMessages((prev) => [
-            ...prev,
-            { id: crypto.randomUUID(), role: 'user', text },
-        ]);
+        setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'user', text }]);
         setInput('');
 
         try {
@@ -237,7 +352,6 @@ export default function AiChatBubble() {
                 variables: {
                     input: {
                         message: text,
-                        // Only include aiConversationId once we have one — never send null.
                         ...(conversationId ? { aiConversationId: conversationId } : {}),
                     },
                 },
@@ -262,30 +376,35 @@ export default function AiChatBubble() {
         } catch {
             setMessages((prev) => [
                 ...prev,
-                {
-                    id: crypto.randomUUID(),
-                    role: 'ai',
-                    text: 'Bir şeyler ters gitti. Lütfen tekrar dene.',
-                },
+                { id: crypto.randomUUID(), role: 'ai', text: 'Bir şeyler ters gitti. Lütfen tekrar dene.' },
             ]);
         }
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            handleSend();
-        }
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
     };
 
+    // Hide the floating bubble on routes where it would cover the page's own input,
+    // or where an AI assistant doesn't belong (auth / admin).
+    const hideBubble =
+        pathname === '/AI' ||
+        pathname?.startsWith('/AI/') ||
+        pathname === '/messages' ||
+        pathname?.startsWith('/messages/') ||
+        pathname === '/login' ||
+        pathname === '/register' ||
+        pathname?.startsWith('/admin');
+    if (hideBubble) return null;
+
     return (
-        <div className="fixed bottom-24 right-6 z-[9900]">
+        <div className="fixed bottom-6 right-6 z-[9900]">
 
-            {/* Chat Panel — absolutely anchored above the button */}
+            {/* Chat Panel */}
             {isOpen && (
-                <div className="absolute bottom-20 right-0 w-[calc(100vw-3rem)] sm:w-[400px] h-[600px] max-h-[calc(100vh-11rem)] bg-[#0B0F19]/95 backdrop-blur-2xl border border-cyan-500/20 rounded-3xl shadow-[0_10px_40px_rgba(34,211,238,0.15)] flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 fade-in duration-300">
+                <div className="absolute bottom-20 right-0 w-[calc(100vw-3rem)] sm:w-[420px] h-[85vh] max-h-[calc(100vh-6rem)] bg-[#0B0F19]/95 backdrop-blur-2xl border border-cyan-500/20 rounded-3xl shadow-[0_10px_40px_rgba(34,211,238,0.15)] flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 fade-in duration-300">
 
-                    {/* Header (fixed) */}
+                    {/* Header */}
                     <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-black/30 shrink-0">
                         <div className="flex items-center gap-2 min-w-0">
                             <div className="p-1.5 bg-cyan-500/20 rounded-lg shrink-0">
@@ -295,9 +414,7 @@ export default function AiChatBubble() {
                                 <h3 className="text-sm font-black text-white truncate" title={conversationTitle || 'UniVerse AI'}>
                                     {conversationTitle || 'UniVerse AI'}
                                 </h3>
-                                <p className="text-[10px] text-cyan-400/70 uppercase tracking-wider">
-                                    Yapay Zeka Asistanı
-                                </p>
+                                <p className="text-[10px] text-cyan-400/70 uppercase tracking-wider">Yapay Zeka Asistanı</p>
                             </div>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
@@ -311,33 +428,76 @@ export default function AiChatBubble() {
                                     Yeni
                                 </button>
                             )}
-                            <button
-                                onClick={() => setIsOpen(false)}
-                                className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-                            >
+                            <button onClick={openFullPage} title="Tam sayfa" className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
+                                <Maximize2 size={16} />
+                            </button>
+                            <button onClick={() => setIsOpen(false)} title="Kapat" className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
                                 <X size={18} />
                             </button>
                         </div>
                     </div>
 
+                    {/* Recent conversations (visible until a chat starts) */}
+                    {showRecent && (
+                        <div className="shrink-0 border-b border-white/5 bg-white/[0.02]">
+                            <div className="flex items-center gap-1.5 px-4 pt-3 pb-2">
+                                <History size={12} className="text-gray-500" />
+                                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Son Sohbetler</span>
+                            </div>
+                            {/* Shows ~5 rows tall, scroll for the rest */}
+                            <div className={`max-h-[168px] overflow-y-auto px-3 pb-3 space-y-1 ${SCROLLBAR_GRAY}`}>
+                                {previewsLoading && (
+                                    <div className="py-6 flex items-center justify-center">
+                                        <Loader2 size={18} className="text-gray-500 animate-spin" />
+                                    </div>
+                                )}
+                                {!previewsLoading && previews.length === 0 && (
+                                    <div className="py-6 flex flex-col items-center justify-center text-center">
+                                        <MessageSquare size={22} className="text-gray-600 mb-1.5" />
+                                        <p className="text-xs text-gray-500">Henüz geçmiş sohbetin yok.</p>
+                                    </div>
+                                )}
+                                {!previewsLoading && previews.map((conv) => (
+                                    <button
+                                        key={conv.aiConversationId}
+                                        onClick={() => selectConversation(conv)}
+                                        className="w-full text-left px-3 py-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 hover:border-white/10 transition-colors group"
+                                    >
+                                        <div className="flex items-center justify-between gap-2">
+                                            <span className="text-[13px] text-gray-300 group-hover:text-white truncate">
+                                                {conv.title || 'İsimsiz Sohbet'}
+                                            </span>
+                                            <span className="text-[10px] text-gray-600 shrink-0">{formatConvDate(conv.updatedAt)}</span>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Messages (scrollable) */}
-                    <div
-                        ref={scrollRef}
-                        className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-cyan-500/30 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-cyan-500/50 [scrollbar-width:thin] [scrollbar-color:rgba(34,211,238,0.3)_transparent]"
-                    >
-                        {messages.length === 0 && !loading && (
+                    <div ref={scrollRef} className={`flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4 ${SCROLLBAR_CYAN}`}>
+                        {historyLoading && (
+                            <div className="h-full flex items-center justify-center">
+                                <Loader2 size={24} className="text-cyan-400 animate-spin" />
+                            </div>
+                        )}
+
+                        {showRecent && (
                             <div className="h-full flex flex-col items-center justify-center text-center px-4">
                                 <div className="p-3 bg-cyan-500/10 rounded-2xl mb-3">
                                     <Sparkles size={28} className="text-cyan-400" />
                                 </div>
-                                <h4 className="text-base font-bold text-white mb-1">Merhaba ${}! 👋</h4>
+                                <h4 className="text-base font-bold text-white mb-1">
+                                    Merhaba{firstName ? ` ${firstName}` : ''}! 👋
+                                </h4>
                                 <p className="text-sm text-gray-400 leading-relaxed">
                                     Aradığın ürünü tarif et, senin için en uygun ilanları bulayım.
                                 </p>
                             </div>
                         )}
 
-                        {messages.map((msg) => {
+                        {!historyLoading && messages.map((msg) => {
                             if (msg.role === 'user') {
                                 return (
                                     <div key={msg.id} className="flex justify-end">
@@ -347,16 +507,11 @@ export default function AiChatBubble() {
                                     </div>
                                 );
                             }
-
-                            // AI turn: one grouped container holding text + cards + follow-up
                             const hasListings = msg.listings && msg.listings.length > 0;
                             return (
                                 <div key={msg.id} className="flex justify-start">
                                     <div className="w-full bg-white/5 border border-white/10 rounded-2xl rounded-bl-md p-3 space-y-3">
-                                        {/* Intro text */}
-                                        <p className="text-sm text-gray-200 break-words px-1">{msg.text}</p>
-
-                                        {/* Listing cards */}
+                                        {msg.text && <p className="text-sm text-gray-200 break-words px-1">{msg.text}</p>}
                                         {hasListings && (
                                             <div className="space-y-2">
                                                 {msg.listings!.map((item) => (
@@ -364,17 +519,12 @@ export default function AiChatBubble() {
                                                 ))}
                                             </div>
                                         )}
-
-                                        {/* Follow-up text below cards */}
-                                        {msg.messageAfter && (
-                                            <p className="text-sm text-gray-200 break-words px-1">{msg.messageAfter}</p>
-                                        )}
+                                        {msg.messageAfter && <p className="text-sm text-gray-200 break-words px-1">{msg.messageAfter}</p>}
                                     </div>
                                 </div>
                             );
                         })}
 
-                        {/* Thinking indicator */}
                         {loading && (
                             <div className="flex justify-start">
                                 <div className="bg-white/5 border border-white/10 rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-2.5">
@@ -389,7 +539,7 @@ export default function AiChatBubble() {
                         )}
                     </div>
 
-                    {/* Input (fixed) */}
+                    {/* Input */}
                     <div className="p-3 border-t border-white/10 bg-black/30 shrink-0">
                         <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-1 focus-within:border-cyan-500/50 transition-colors">
                             <input
@@ -413,14 +563,14 @@ export default function AiChatBubble() {
                 </div>
             )}
 
-            {/* Floating Button */}
+            {/* Floating Button — tooltip ABOVE */}
             <button
                 onClick={() => setIsOpen((v) => !v)}
                 className="w-14 h-14 bg-cyan-600 hover:bg-cyan-500 text-[#0B0F19] rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(34,211,238,0.4)] transition-all hover:scale-110 relative group"
             >
                 {isOpen ? <X size={26} /> : <Sparkles size={26} />}
                 {!isOpen && (
-                    <div className="absolute right-full mr-4 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-black/80 text-white text-xs font-bold rounded-lg opacity-0 group-hover:opacity-100 transition-opacity border border-white/10 whitespace-nowrap shadow-xl">
+                    <div className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-black/80 text-white text-xs font-bold rounded-lg opacity-0 group-hover:opacity-100 transition-opacity border border-white/10 whitespace-nowrap shadow-xl">
                         AI Asistan
                     </div>
                 )}
