@@ -5,12 +5,36 @@ type PresentedListing {
     note: String
 }
 
+type ComparisonValue {
+    listingId: ID!
+    value: String!
+    isBest: Boolean!      # true = this listing wins THIS attribute → highlight it
+}
+
+type ComparisonAttribute {
+    label: String!        # e.g. "Fiyat", "Durum", "Ekran"
+    values: [ComparisonValue!]!   # one per listing being compared
+}
+
+type ComparisonListing {
+    listing: Listing!
+    note: String
+}
+
+type PresentedComparison {
+    listings: [ComparisonListing!]!       # 2–4 listings
+    attributes: [ComparisonAttribute!]    # NULLABLE — null means advisory mode
+    comment: String!                      # AI's guidance / recommendation
+    assumptionNote: String                # optional, e.g. "Orijinal PS4 varsaydım"
+}
+
 type AIResponse {
     aiConversationId: ID!
     message: String!
     messageAfter: String
     listings: [PresentedListing!]!
     title: String
+    comparison: PresentedComparison
 }
 
 input askChatbotInput {

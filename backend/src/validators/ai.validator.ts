@@ -66,3 +66,52 @@ export const presentListingsSchema = z.object({
         "Optional message text shown BELOW the listing cards, e.g. a recommendation or follow-up question."
     ),
 })
+
+export const presentComparisonSchema = z.object({
+    listings: z.array(
+        z.object({
+            id: z.uuid().describe(
+                "The exact unique identifier of a listing. Only use IDs that appeared in a prior search_listings or get_listing result — never invent one."
+            ),
+            note: z.string().max(200).optional().describe(
+                "Optional short note about this listing, shown on its card."
+            ),
+        })
+    ).min(2).max(4).describe(
+        "The 2–4 listings being compared, in display order."
+    ),
+
+    attributes: z.array(
+        z.object({
+            label: z.string().describe(
+                "The attribute being compared on this row (e.g. 'Fiyat', 'Durum', 'Ekran', 'Satıcı Puanı')."
+            ),
+            values: z.array(
+                z.object({
+                    listingId: z.uuid().describe("Which listing this value belongs to."),
+                    value: z.string().describe("The value for this listing (e.g. '6500 TL', 'iyi', '6.1 inç')."),
+                    isBest: z.boolean().describe(
+                        "True if this listing is best on THIS attribute. If listings are equal on this attribute, set false for all of them (neutral)."
+                    ),
+                })
+            ).describe("One entry per compared listing for this attribute."),
+        })
+    ).optional().describe(
+        "Optional per-attribute comparison rows. Include ONLY when the listings are directly comparable (same product type). Leave empty/omit when items aren't comparable (e.g. a laptop vs a phone) — in that case rely on 'comment' for advisory guidance."
+    ),
+
+    comment: z.string().describe(
+        "Your overall guidance. In table mode: a brief tradeoff summary. In advisory mode (no attributes): the main pros/cons and a needs-based recommendation."
+    ),
+
+    assumptionNote: z.string().optional().describe(
+        "State any assumption you made, e.g. 'Orijinal PS4 varsaydım' when web specs required guessing the exact model."
+    ),
+});
+
+export function extractListingIds(message: string): string[] {
+    const uuidRegex = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+    const matches = message.match(uuidRegex);
+    if (!matches) return [];
+    return [...new Set(matches)];   // dedupe
+}
