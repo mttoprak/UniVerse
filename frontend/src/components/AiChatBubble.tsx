@@ -5,7 +5,37 @@ import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { gql } from '@apollo/client';
 import { useMutation, useQuery, useLazyQuery } from '@apollo/client/react';
-import { Sparkles, X, Send, MapPin, Tag, BadgeCheck, Plus, Maximize2, History, Loader2, MessageSquare, ChevronDown } from 'lucide-react';
+import { Sparkles, X, Send, MapPin, Tag, BadgeCheck, Plus, Maximize2, History, Loader2, MessageSquare, Check, GitCompare } from 'lucide-react';
+
+/* ---------------- Listing selection shape reused across queries ---------------- */
+
+const LISTING_FIELDS = `
+    id
+    title
+    description
+    price
+    location
+    type
+    condition
+    category
+    photos
+    owner { id username name surname profile_photo is_verified }
+`;
+
+// History resolver's Listing may not expose `owner`. If it does, swap this back
+// to LISTING_FIELDS. Kept separate so the live query can request owner while
+// history omits it (avoids GRAPHQL_VALIDATION_FAILED on a missing field).
+const LISTING_FIELDS_HISTORY = `
+    id
+    title
+    description
+    price
+    location
+    type
+    condition
+    category
+    photos
+`;
 
 /* ---------------- GraphQL ---------------- */
 
@@ -18,18 +48,19 @@ const ASK_CHATBOT = gql`
             title
             listings {
                 note
-                listing {
-                    id
-                    title
-                    description
-                    price
-                    location
-                    type
-                    condition
-                    category
-                    photos
-                    owner { id username name surname profile_photo is_verified }
+                listing { ${LISTING_FIELDS} }
+            }
+            comparison {
+                listings {
+                    note
+                    listing { ${LISTING_FIELDS} }
                 }
+                attributes {
+                    label
+                    values { listingId value isBest }
+                }
+                comment
+                assumptionNote
             }
         }
     }
@@ -62,24 +93,24 @@ export const AI_CONVERSATION_HISTORY = gql`
                 text
                 listings {
                     note
-                    listing {
-                        id
-                        title
-                        description
-                        price
-                        location
-                        type
-                        condition
-                        category
-                        photos
-                        owner { id username name surname profile_photo is_verified }
+                    listing { ${LISTING_FIELDS_HISTORY} }
+                }
+                comparison {
+                    listings {
+                        note
+                        listing { ${LISTING_FIELDS_HISTORY} }
                     }
+                    attributes {
+                        label
+                        values { listingId value isBest }
+                    }
+                    comment
+                    assumptionNote
                 }
             }
         }
     }
 `;
-
 /* ---------------- Types ---------------- */
 
 export interface Owner {
@@ -109,12 +140,34 @@ export interface PresentedListing {
     listing: ChatListing;
 }
 
+/* --- Comparison shapes --- */
+export interface ComparisonValue {
+    listingId: string;
+    value: string;
+    isBest: boolean;
+}
+export interface ComparisonAttribute {
+    label: string;
+    values: ComparisonValue[];
+}
+export interface ComparisonListing {
+    listing: ChatListing;
+    note?: string | null;
+}
+export interface PresentedComparison {
+    listings: ComparisonListing[];
+    attributes?: ComparisonAttribute[] | null; // null => advisory mode
+    comment: string;
+    assumptionNote?: string | null;
+}
+
 interface AIResponse {
     aiConversationId: string;
     message: string;
     messageAfter?: string | null;
     title?: string | null;
     listings: PresentedListing[];
+    comparison?: PresentedComparison | null;
 }
 
 interface AskChatbotResult { askChatbot: AIResponse; }
@@ -137,6 +190,7 @@ export interface HistoryMessage {
     role: string;                 // "user" | "assistant"
     text?: string | null;
     listings: PresentedListing[];
+    comparison?: PresentedComparison | null;
 }
 export interface HistoryResult {
     aiConversationHistory: { aiConversationId: string; messages: HistoryMessage[] };
@@ -150,6 +204,10 @@ export interface UIMessage {
     text: string;
     messageAfter?: string | null;
     listings?: PresentedListing[];
+    comparison?: PresentedComparison | null;
+    // When set, this user message is a comparison request and renders as a styled
+    // chip instead of the raw "karşılaştır: id id" text.
+    compareMeta?: { count: number } | null;
 }
 
 /* ---------------- Shared handoff (imported by /AI page) ---------------- */
@@ -159,9 +217,13 @@ export interface AiHandoff {
     conversationId: string | null;
     conversationTitle: string | null;
     messages: UIMessage[];
+    // Optional: an auto-message to send on arrival (used by feed "Karşılaştır").
+    autoSend?: string | null;
+    // How many listings the compare request covers, for the styled chip.
+    autoSendCompareCount?: number | null;
 }
 
-/* ---------------- Shared helpers (exported for reuse on /AI) ---------------- */
+/* ---------------- Shared helpers ---------------- */
 
 export const CONDITION_LABELS: Record<string, string> = {
     new: 'Sıfır',
@@ -178,7 +240,6 @@ export const THINKING_STEPS = [
     'Neredeyse hazır...',
 ];
 
-// Reusable scrollbar classes so every scroll area matches the cyber theme.
 export const SCROLLBAR_CYAN =
     '[&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-cyan-500/30 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-cyan-500/50 [scrollbar-width:thin] [scrollbar-color:rgba(34,211,238,0.3)_transparent]';
 export const SCROLLBAR_GRAY =
@@ -200,6 +261,7 @@ export const historyToUIMessages = (msgs: HistoryMessage[]): UIMessage[] =>
         role: m.role === 'user' ? 'user' : 'ai',
         text: m.text || '',
         listings: m.listings,
+        comparison: m.comparison ?? null,
     }));
 
 export const formatConvDate = (iso: string) => {
@@ -208,9 +270,9 @@ export const formatConvDate = (iso: string) => {
     return d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
 };
 
-/* ---------------- Listing Card (exported for /AI reuse) ---------------- */
+/* ---------------- Listing Card ---------------- */
 
-export function ListingCard({ item }: { item: PresentedListing }) {
+export function ListingCard({ item }: { item: PresentedListing | ComparisonListing }) {
     const l = item.listing;
     const photo = l.photos?.[0];
     const ownerName = ownerDisplayName(l.owner);
@@ -264,6 +326,140 @@ export function ListingCard({ item }: { item: PresentedListing }) {
     );
 }
 
+/* ---------------- Comparison View (reusable: live chat + history) ---------------- */
+
+export function ComparisonView({ comparison }: { comparison: PresentedComparison }) {
+    const { listings, attributes, comment, assumptionNote } = comparison;
+    const isStructured = !!attributes && attributes.length > 0;
+
+    // Fast lookup: attribute label -> (listingId -> value)
+    const valueFor = (attr: ComparisonAttribute, listingId: string) =>
+        attr.values.find((v) => v.listingId === listingId);
+
+    return (
+        <div className="space-y-3">
+            {isStructured ? (
+                /* ---------- Structured mode: side-by-side table ---------- */
+                <div className={`overflow-x-auto -mx-1 px-1 ${SCROLLBAR_CYAN}`}>
+                    <table className="w-full border-separate border-spacing-0 min-w-[420px]">
+                        {/* Listing columns */}
+                        <thead>
+                        <tr>
+                            <th className="sticky left-0 z-10 bg-[#0B0F19] w-20 align-bottom" />
+                            {listings.map((cl) => (
+                                <th key={cl.listing.id} className="p-1 align-bottom min-w-[140px]">
+                                    <Link
+                                        href={`/listings/${cl.listing.id}`}
+                                        className="block bg-white/5 border border-white/10 hover:border-cyan-500/40 rounded-xl p-2 transition-colors"
+                                    >
+                                        <div className="w-full h-20 rounded-lg overflow-hidden bg-black/40 flex items-center justify-center border border-white/5 mb-2">
+                                            {cl.listing.photos?.[0] ? (
+                                                // eslint-disable-next-line @next/next/no-img-element
+                                                <img src={cl.listing.photos[0]} alt={cl.listing.title} className="w-full h-full object-cover" />
+                                            ) : (
+                                                <Tag size={18} className="text-white/20" />
+                                            )}
+                                        </div>
+                                        <p className="text-[12px] font-bold text-gray-100 line-clamp-2 leading-tight text-left">{cl.listing.title}</p>
+                                        <p className="text-sm font-black text-emerald-400 mt-1 text-left">{formatPrice(cl.listing.price)}</p>
+                                    </Link>
+                                </th>
+                            ))}
+                        </tr>
+                        </thead>
+                        {/* Attribute rows */}
+                        <tbody>
+                        {attributes!.map((attr, i) => (
+                            <tr key={`${attr.label}-${i}`}>
+                                <td className="sticky left-0 z-10 bg-[#0B0F19] pr-2 py-1.5 align-middle">
+                                    <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wide">{attr.label}</span>
+                                </td>
+                                {listings.map((cl) => {
+                                    const cell = valueFor(attr, cl.listing.id);
+                                    const best = cell?.isBest;
+                                    return (
+                                        <td key={cl.listing.id} className="p-1 align-middle">
+                                            <div
+                                                className={`rounded-lg px-2.5 py-2 text-[12px] text-center border transition-colors ${
+                                                    best
+                                                        ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 font-bold'
+                                                        : 'bg-white/[0.03] border-white/5 text-gray-300'
+                                                }`}
+                                            >
+                                                    <span className="inline-flex items-center gap-1 justify-center">
+                                                        {best && <Check size={12} className="text-emerald-400 shrink-0" />}
+                                                        <span className="break-words">{cell?.value ?? '—'}</span>
+                                                    </span>
+                                            </div>
+                                        </td>
+                                    );
+                                })}
+                            </tr>
+                        ))}
+                        </tbody>
+                    </table>
+                </div>
+            ) : (
+                /* ---------- Advisory mode: just the cards ---------- */
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {listings.map((cl) => (
+                        <ListingCard key={cl.listing.id} item={cl} />
+                    ))}
+                </div>
+            )}
+
+            {/* AI guidance */}
+            {comment && (
+                <div className="bg-cyan-500/[0.07] border border-cyan-500/20 rounded-xl p-3">
+                    <p className="text-sm text-gray-200 break-words leading-relaxed">{comment}</p>
+                </div>
+            )}
+
+            {/* Assumption note (subtle) */}
+            {assumptionNote && (
+                <p className="text-[11px] text-gray-500 italic px-1">{assumptionNote}</p>
+            )}
+        </div>
+    );
+}
+
+/* ---------------- Compare request chip (user's compare message) ---------------- */
+
+export function CompareRequestChip({ count }: { count: number }) {
+    return (
+        <div className="inline-flex items-center gap-2 bg-cyan-600 text-white rounded-2xl rounded-br-md px-4 py-2.5">
+            <GitCompare size={16} className="shrink-0" />
+            <span className="text-sm font-bold">Karşılaştırma: {count} ilan</span>
+        </div>
+    );
+}
+
+/* ---------------- AI message renderer (shared) ---------------- */
+
+export function AiMessageBody({ msg }: { msg: UIMessage }) {
+    const hasComparison = !!msg.comparison;
+    const hasListings = !hasComparison && msg.listings && msg.listings.length > 0;
+
+    return (
+        <div className="w-full bg-white/5 border border-white/10 rounded-2xl rounded-bl-md p-3 space-y-3">
+            {msg.text && <p className="text-sm text-gray-200 break-words px-1">{msg.text}</p>}
+
+            {/* Comparison takes priority over the normal listings render */}
+            {hasComparison && <ComparisonView comparison={msg.comparison!} />}
+
+            {hasListings && (
+                <div className="space-y-2">
+                    {msg.listings!.map((item) => (
+                        <ListingCard key={item.listing.id} item={item} />
+                    ))}
+                </div>
+            )}
+
+            {msg.messageAfter && <p className="text-sm text-gray-200 break-words px-1">{msg.messageAfter}</p>}
+        </div>
+    );
+}
+
 /* ---------------- Main Widget ---------------- */
 
 export default function AiChatBubble() {
@@ -283,19 +479,14 @@ export default function AiChatBubble() {
     const { data: meData } = useQuery<GetMeResult>(GET_ME);
     const firstName = meData?.getMe?.name || meData?.getMe?.username || null;
 
-    // Previews load when the panel opens.
     const [loadPreviews, { data: previewsData, loading: previewsLoading }] =
         useLazyQuery<PreviewsResult>(AI_CONVERSATION_PREVIEWS, { fetchPolicy: 'network-only' });
     const [loadHistory, { loading: historyLoading }] =
         useLazyQuery<HistoryResult>(AI_CONVERSATION_HISTORY, { fetchPolicy: 'network-only' });
 
     const previews = previewsData?.aiConversationPreviews?.conversations ?? [];
-
-    // The recent list is visible when NOT actively in a conversation.
-    // It "collapses" the moment there are messages on screen.
     const showRecent = messages.length === 0 && !loading && !historyLoading;
 
-    // Load previews once whenever the panel is opened fresh.
     useEffect(() => {
         if (isOpen) loadPreviews();
     }, [isOpen, loadPreviews]);
@@ -317,7 +508,7 @@ export default function AiChatBubble() {
         setConversationId(null);
         setConversationTitle(null);
         setInput('');
-        loadPreviews(); // refresh recent list
+        loadPreviews();
     };
 
     const selectConversation = async (conv: ConversationPreview) => {
@@ -328,7 +519,14 @@ export default function AiChatBubble() {
             setConversationId(hist.aiConversationId);
             setConversationTitle(conv.title || 'Sohbet');
             setMessages(historyToUIMessages(hist.messages));
-        } catch { /* retry allowed */ }
+        } catch (err) {
+            console.error('History load failed:', err);
+            setConversationId(conv.aiConversationId);
+            setConversationTitle(conv.title || 'Sohbet');
+            setMessages([
+                { id: crypto.randomUUID(), role: 'ai', text: 'Bu sohbet yüklenemedi. Lütfen tekrar dene.' },
+            ]);
+        }
     };
 
     const openFullPage = () => {
@@ -371,6 +569,7 @@ export default function AiChatBubble() {
                     text: res.message,
                     messageAfter: res.messageAfter,
                     listings: res.listings,
+                    comparison: res.comparison ?? null,
                 },
             ]);
         } catch {
@@ -437,14 +636,13 @@ export default function AiChatBubble() {
                         </div>
                     </div>
 
-                    {/* Recent conversations (visible until a chat starts) */}
+                    {/* Recent conversations */}
                     {showRecent && (
                         <div className="shrink-0 border-b border-white/5 bg-white/[0.02]">
                             <div className="flex items-center gap-1.5 px-4 pt-3 pb-2">
                                 <History size={12} className="text-gray-500" />
                                 <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Son Sohbetler</span>
                             </div>
-                            {/* Shows ~5 rows tall, scroll for the rest */}
                             <div className={`max-h-[168px] overflow-y-auto px-3 pb-3 space-y-1 ${SCROLLBAR_GRAY}`}>
                                 {previewsLoading && (
                                     <div className="py-6 flex items-center justify-center">
@@ -475,7 +673,7 @@ export default function AiChatBubble() {
                         </div>
                     )}
 
-                    {/* Messages (scrollable) */}
+                    {/* Messages */}
                     <div ref={scrollRef} className={`flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4 ${SCROLLBAR_CYAN}`}>
                         {historyLoading && (
                             <div className="h-full flex items-center justify-center">
@@ -501,26 +699,19 @@ export default function AiChatBubble() {
                             if (msg.role === 'user') {
                                 return (
                                     <div key={msg.id} className="flex justify-end">
-                                        <div className="max-w-[85%] bg-cyan-600 text-white rounded-2xl rounded-br-md px-4 py-2.5 text-sm break-words">
-                                            {msg.text}
-                                        </div>
+                                        {msg.compareMeta ? (
+                                            <CompareRequestChip count={msg.compareMeta.count} />
+                                        ) : (
+                                            <div className="max-w-[85%] bg-cyan-600 text-white rounded-2xl rounded-br-md px-4 py-2.5 text-sm break-words">
+                                                {msg.text}
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             }
-                            const hasListings = msg.listings && msg.listings.length > 0;
                             return (
                                 <div key={msg.id} className="flex justify-start">
-                                    <div className="w-full bg-white/5 border border-white/10 rounded-2xl rounded-bl-md p-3 space-y-3">
-                                        {msg.text && <p className="text-sm text-gray-200 break-words px-1">{msg.text}</p>}
-                                        {hasListings && (
-                                            <div className="space-y-2">
-                                                {msg.listings!.map((item) => (
-                                                    <ListingCard key={item.listing.id} item={item} />
-                                                ))}
-                                            </div>
-                                        )}
-                                        {msg.messageAfter && <p className="text-sm text-gray-200 break-words px-1">{msg.messageAfter}</p>}
-                                    </div>
+                                    <AiMessageBody msg={msg} />
                                 </div>
                             );
                         })}

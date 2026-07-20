@@ -1,215 +1,435 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
-import { ChevronLeft, MapPin, Clock, User, Loader2, AlertTriangle, Send, Zap, GraduationCap } from 'lucide-react';
-import CountdownTimer from "@/components/CountdownTimer";
+import { useRouter } from 'next/navigation';
+import { gql } from '@apollo/client';
+import { useQuery } from '@apollo/client/react';
+import { Search, MapPin, Filter, Clock, ChevronDown, ImageIcon, AlertCircle, GitCompare, X, Check } from 'lucide-react';
+import { AI_HANDOFF_KEY, type AiHandoff } from '@/components/AiChatBubble';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
-
-async function fetchGraphQL(query: string, variables: any = {}) {
-    const token = localStorage.getItem('accessToken');
-    const response = await fetch(`${API_URL}/graphql`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({ query, variables })
-    });
-
-    if (!response.ok) throw new Error(`API Hatası: ${response.status}`);
-    const result = await response.json();
-    if (result.errors) throw new Error(result.errors[0].message);
-    return result.data;
+interface Advert {
+    _id: string;
+    title: string;
+    price: number | string;
+    category: string;
+    type: string;
+    location: string;
+    createdAt: string;
+    photos?: string[];
 }
 
-const GET_EMERGENCY_DETAIL = `#graphql
-query GetEmergencyDetail($id: ID!) {
-    getListing(id: $id) {
-        _id: id
-        title
-        description
-        location
-        createdAt
-        expires
-        type
-        owner {
-            _id: id
-            username
-            profile_photo
-            account_type
-        }
+interface RawListing {
+    id: string;
+    title: string;
+    price: number | string;
+    category: string;
+    type: string;
+    location: string;
+    createdAt: string;
+    photos?: string[];
+}
+
+interface GetListingsResult {
+    getListings: RawListing[];
+}
+
+interface GetListingsVars {
+    q?: string;
+    type?: string;
+    sort?: string;
+}
+
+const GET_LISTINGS_QUERY = gql`
+  query GetListings($q: String, $type: String, $sort: String) {
+    getListings(q: $q, type: $type, sort: $sort) {
+      id
+      title
+      price
+      category
+      type
+      location
+      createdAt
+      photos
     }
-}
+  }
 `;
 
-export default function EmergencyDetailPage() {
-    const params = useParams();
-    const router = useRouter();
-    const id = params.id as string;
+const MAX_COMPARE = 4;
+const MIN_COMPARE = 2;
 
-    const [ad, setAd] = useState<any>(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+export default function FeedPage() {
+    const router = useRouter();
+
+    const [searchQuery, setSearchQuery] = useState('');
+    const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+    const [minPrice, setMinPrice] = useState('');
+    const [maxPrice, setMaxPrice] = useState('');
+
+    const [sortBy, setSortBy] = useState('newest');
+    const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
+
+    // --- Compare mode state ---
+    const [compareMode, setCompareMode] = useState(false);
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+    const [debouncedSearch, setDebouncedSearch] = useState('');
+    const [debouncedCategories, setDebouncedCategories] = useState<string[]>([]);
 
     useEffect(() => {
-        const fetchEmergencyDetails = async () => {
-            if (!id) return;
-            try {
-                setIsLoading(true);
-                const token = localStorage.getItem('accessToken');
-                if (!token) {
-                    router.push('/login');
-                    return;
-                }
+        const t = setTimeout(() => {
+            setDebouncedSearch(searchQuery);
+            setDebouncedCategories(selectedCategories);
+        }, 500);
+        return () => clearTimeout(t);
+    }, [searchQuery, selectedCategories]);
 
-                const data = await fetchGraphQL(GET_EMERGENCY_DETAIL, { id });
-                const listingData = data.getListing;
+    useEffect(() => {
+        const token = localStorage.getItem('accessToken');
+        if (!token) router.push('/login');
+    }, [router]);
 
-                if (!listingData) throw new Error('Acil ilan bulunamadı.');
+    const { data, loading, error } = useQuery<GetListingsResult, GetListingsVars>(GET_LISTINGS_QUERY, {
+        variables: {
+            q: debouncedSearch || undefined,
+            type: debouncedCategories.length > 0 ? debouncedCategories.join(',') : undefined,
+            sort: sortBy,
+        },
+        fetchPolicy: 'cache-and-network',
+    });
 
-                if (listingData.type !== 'urgent') {
-                    router.replace(`/listings/${id}`);
-                    return;
-                }
+    const fetchedData = data?.getListings ?? [];
+    const adverts: Advert[] = fetchedData
+        .map((item) => ({ ...item, _id: item.id }))
+        .filter((ad) => ad.type !== 'urgent')
+        .filter((ad) => {
+            const priceNum = Number(ad.price);
+            return (!minPrice || priceNum >= Number(minPrice)) && (!maxPrice || priceNum <= Number(maxPrice));
+        });
 
-                setAd(listingData);
-            } catch (err: any) {
-                setError(err.message);
-            } finally {
-                setIsLoading(false);
-            }
-        };
+    const sortOptions = [
+        { id: 'newest', label: 'En Yeni' },
+        { id: 'price_asc', label: 'Fiyat (Artan)' },
+        { id: 'price_desc', label: 'Fiyat (Azalan)' },
+        { id: 'popular', label: 'En Popüler' }
+    ];
 
-        fetchEmergencyDetails();
-    }, [id, router]);
+    const categoryOptions = [
+        { id: 'secondhand', label: 'İkinci El Eşya' },
+        { id: 'roommate', label: 'Ev / Oda Arkadaşı' },
+        { id: 'job', label: 'İş / Staj' },
+        { id: 'scholarship', label: 'Burs' },
+        { id: 'carpooling', label: 'Yol Arkadaşı' },
+        { id: 'course', label: 'Özel Ders' },
+        { id: 'note', label: 'Ders Notu / Kitap' }
+    ];
 
-    const handlePrimaryAction = () => {
-        router.push(`/messages?listingId=${id}`);
+    const handleCategoryToggle = (categoryId: string) => {
+        setSelectedCategories(prev =>
+            prev.includes(categoryId) ? prev.filter(c => c !== categoryId) : [...prev, categoryId]
+        );
     };
 
-    if (isLoading) {
-        return (
-            <div className="min-h-screen pt-28 flex flex-col items-center justify-center">
-                <Loader2 className="w-12 h-12 text-rose-500 animate-spin mb-4" />
-                <p className="text-rose-400 font-bold uppercase tracking-widest animate-pulse">Acil Durum Yükleniyor...</p>
-            </div>
-        );
-    }
+    const formatDate = (dateString: string) => {
+        const ms = Number(dateString);
+        const date = Number.isNaN(ms) ? new Date(dateString) : new Date(ms);
+        if (Number.isNaN(date.getTime())) return 'Tarih Yok';
+        const options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' };
+        return date.toLocaleDateString('tr-TR', options);
+    };
 
-    if (error || !ad) {
-        return (
-            <div className="min-h-screen pt-28 flex flex-col items-center justify-center px-4 text-center">
-                <AlertTriangle size={64} className="text-rose-500 mb-4 opacity-50" />
-                <h2 className="text-2xl font-black text-white mb-2">İlan Bulunamadı</h2>
-                <p className="text-gray-400 mb-6">{error || "Bu ilan silinmiş veya süresi dolmuş olabilir."}</p>
-                <Link href="/emergencies-feed" className="px-6 py-3 bg-white/5 hover:bg-white/10 rounded-xl text-white transition-colors">
-                    Panoya Dön
-                </Link>
-            </div>
-        );
-    }
+    const getCategoryName = (advert: Advert) => {
+        const found = categoryOptions.find(opt => opt.id === advert.type || opt.id === advert.category);
+        return found ? found.label : (advert.category || advert.type || 'İlan');
+    };
 
-    const seller = ad.owner;
-    // ARTIK HESAPLAMA YOK: Direkt veritabanındaki ISO string'i sayaca veriyoruz
-    const expiresAt = ad.expires;
+    /* ---------- Compare handlers ---------- */
+
+    const toggleCompareMode = () => {
+        setCompareMode((v) => !v);
+        setSelectedIds([]); // reset selection whenever the mode flips
+    };
+
+    const toggleSelect = (id: string) => {
+        setSelectedIds((prev) => {
+            if (prev.includes(id)) return prev.filter((x) => x !== id);
+            if (prev.length >= MAX_COMPARE) return prev; // cap at 4
+            return [...prev, id];
+        });
+    };
+
+    const handleCardClick = (advert: Advert) => {
+        if (compareMode) {
+            toggleSelect(advert._id);
+        } else {
+            router.push(`/listings/${advert._id}`);
+        }
+    };
+
+    const startComparison = () => {
+        if (selectedIds.length < MIN_COMPARE) return;
+
+        // Message format the backend expects: "karşılaştır: id id id"
+        const message = `karşılaştır: ${selectedIds.join(' ')}`;
+
+        const handoff: AiHandoff = {
+            conversationId: null,      // start a fresh conversation for the comparison
+            conversationTitle: null,
+            messages: [],
+            autoSend: message,         // /AI auto-sends this on arrival
+            autoSendCompareCount: selectedIds.length,  // for the styled compare chip
+        };
+
+        try {
+            sessionStorage.setItem(AI_HANDOFF_KEY, JSON.stringify(handoff));
+        } catch { /* storage unavailable; /AI will just open empty */ }
+
+        router.push('/AI');
+    };
 
     return (
-        <div className="min-h-screen pt-28 pb-12 px-4 relative">
-            <style dangerouslySetInnerHTML={{ __html: `
-                @keyframes heartbeat { 0%, 100% { opacity: 0.15; transform: scale(1); } 50% { opacity: 0.25; transform: scale(1.05); } }
-                .animate-heartbeat { animation: heartbeat 3s infinite ease-in-out; }
-            `}}/>
+        <div className="relative min-h-screen pt-24 pb-12 px-4 md:px-8">
+
+            {/* Background */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10 flex items-center justify-center">
-                <div className="w-[80rem] h-[80rem] bg-rose-600/30 rounded-full blur-[400px] mix-blend-screen animate-heartbeat flex-shrink-0"></div>
+                <div className="w-[60rem] h-[60rem] bg-cyan-600/10 rounded-full blur-[200px] mix-blend-screen shrink-0"></div>
             </div>
 
-            <div className="max-w-3xl mx-auto mt-4">
-                <div className="flex items-center justify-between mb-8">
-                    <Link href="/emergencies-feed" className="flex items-center space-x-2 text-gray-400 hover:text-rose-400 transition-colors group">
-                        <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center group-hover:border-rose-500/50 transition-colors">
-                            <ChevronLeft size={18} />
-                        </div>
-                        <span className="text-sm font-bold uppercase tracking-wider">Panoya Dön</span>
-                    </Link>
-                </div>
+            <div className="max-w-7xl mx-auto flex flex-col lg:flex-row gap-8">
 
-                <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
-                    <div className="bg-rose-500/10 border border-rose-500/30 rounded-3xl p-6 md:p-8 flex flex-col md:flex-row items-center justify-between shadow-[0_0_40px_rgba(244,63,94,0.15)] relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-rose-500/20 blur-3xl"></div>
-                        <div className="flex items-center gap-5 mb-6 md:mb-0 relative z-10">
-                            <div className="p-4 bg-rose-500 rounded-2xl text-black animate-pulse shadow-[0_0_20px_rgba(244,63,94,0.5)] flex-shrink-0">
-                                <Zap size={36} fill="currentColor" />
-                            </div>
-                            <div>
-                                <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight">ACİL YARDIM ÇAĞRISI</h1>
-                                <p className="text-rose-300 text-sm mt-1">Bu ilan kampüste anlık bir ihtiyacı belirtir. Lütfen hızlı aksiyon alın.</p>
+                {/* Left Sidebar: Filters */}
+                <aside className="w-full lg:w-72 shrink-0 space-y-6">
+                    <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-[2rem] p-6 shadow-[0_0_30px_rgba(0,0,0,0.5)] sticky top-28">
+                        <div className="flex items-center justify-between mb-6">
+                            <h2 className="text-xl font-black text-white tracking-tight">Filtreler</h2>
+                            <Filter size={20} className="text-cyan-400" />
+                        </div>
+
+                        <div className="relative mb-6">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+                            <input
+                                type="text"
+                                placeholder="Ne aramıştınız?"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-4 focus:border-cyan-500/50 outline-none text-gray-200 text-sm transition-all"
+                            />
+                        </div>
+
+                        <div className="space-y-3">
+                            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Kategoriler</h3>
+                            {categoryOptions.map((cat) => (
+                                <label key={cat.id} className="flex items-center space-x-3 cursor-pointer group">
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedCategories.includes(cat.id)}
+                                        onChange={() => handleCategoryToggle(cat.id)}
+                                        className="form-checkbox w-4 h-4 bg-black/50 border-white/20 rounded accent-cyan-500 cursor-pointer"
+                                    />
+                                    <span className="text-sm text-gray-300 group-hover:text-white transition-colors">{cat.label}</span>
+                                </label>
+                            ))}
+                        </div>
+
+                        <div className="mt-6 mb-6">
+                            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Fiyat Aralığı</h3>
+                            <div className="flex items-center space-x-2">
+                                <input
+                                    type="number"
+                                    placeholder="Min ₺"
+                                    value={minPrice}
+                                    onChange={(e) => setMinPrice(e.target.value)}
+                                    className="w-1/2 bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-sm text-gray-200 outline-none focus:border-cyan-500/50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                />
+                                <span className="text-gray-500">-</span>
+                                <input
+                                    type="number"
+                                    placeholder="Max ₺"
+                                    value={maxPrice}
+                                    onChange={(e) => setMaxPrice(e.target.value)}
+                                    className="w-1/2 bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-sm text-gray-200 outline-none focus:border-cyan-500/50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                />
                             </div>
                         </div>
-                        <div className="text-center md:text-right relative z-10 bg-black/40 px-4 py-3 rounded-2xl border border-rose-500/20">
-                            <p className="text-gray-400 text-[10px] uppercase font-black tracking-widest mb-1.5">Kalan Süre</p>
-                            {expiresAt ? (
-                                <CountdownTimer expiresAt={expiresAt} onComplete={() => router.push('/emergencies-feed')} />
-                            ) : (
-                                <span className="text-gray-500 text-sm">Bilinmiyor</span>
+
+                        <div className="h-px w-full bg-white/5 my-6"></div>
+
+                        {/* Compare mode toggle */}
+                        <button
+                            onClick={toggleCompareMode}
+                            className={`w-full py-3 flex items-center justify-center gap-2 rounded-xl font-bold transition-all border ${
+                                compareMode
+                                    ? 'bg-cyan-600/30 border-cyan-500/50 text-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.2)]'
+                                    : 'bg-cyan-600/20 hover:bg-cyan-600/40 border-cyan-500/30 text-cyan-300 shadow-[0_0_15px_rgba(34,211,238,0.1)]'
+                            }`}
+                        >
+                            <GitCompare size={18} />
+                            {compareMode ? 'Karşılaştırmadan Çık' : 'Karşılaştırma Modu'}
+                        </button>
+                        {compareMode && (
+                            <p className="text-[11px] text-gray-500 mt-2 text-center leading-snug">
+                                2–4 ilan seç, AI senin için karşılaştırsın.
+                            </p>
+                        )}
+                    </div>
+                </aside>
+
+                {/* Main Content Area */}
+                <main className="flex-1">
+
+                    {/* Top Bar */}
+                    <div className="flex items-center justify-between mb-6 bg-black/20 backdrop-blur-md border border-white/5 rounded-2xl p-4 relative z-30">
+                        <p className="text-sm text-gray-400">
+                            {loading ? 'Yükleniyor...' : `${adverts.length} ilan bulundu`}
+                        </p>
+
+                        <div className="relative">
+                            <button
+                                onClick={() => setIsSortMenuOpen(!isSortMenuOpen)}
+                                className="flex items-center space-x-2 text-sm text-gray-300 hover:text-white transition-colors focus:outline-none"
+                            >
+                                <span>Sırala: <span className="font-bold text-cyan-400">{sortOptions.find(opt => opt.id === sortBy)?.label}</span></span>
+                                <ChevronDown size={16} className={`transition-transform ${isSortMenuOpen ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            {isSortMenuOpen && (
+                                <div className="absolute right-0 mt-3 w-48 bg-[#0B0F19] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-20">
+                                    {sortOptions.map((option) => (
+                                        <button
+                                            key={option.id}
+                                            onClick={() => { setSortBy(option.id); setIsSortMenuOpen(false); }}
+                                            className={`w-full text-left px-4 py-3 text-sm transition-colors hover:bg-white/5 ${sortBy === option.id ? 'text-cyan-400 font-bold bg-cyan-500/10' : 'text-gray-300'}`}
+                                        >
+                                            {option.label}
+                                        </button>
+                                    ))}
+                                </div>
                             )}
                         </div>
                     </div>
 
-                    <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-[0_10px_30px_rgba(0,0,0,0.2)]">
-                        <h2 className="text-3xl font-black text-white leading-tight mb-6">{ad.title}</h2>
-
-                        <div className="flex flex-wrap items-center gap-6 mb-8 pt-6 border-t border-white/10">
-                            <div className="flex items-center text-sm text-gray-300 bg-white/5 px-4 py-2 rounded-xl border border-white/5">
-                                <MapPin size={18} className="mr-2 text-rose-500" />
-                                <span className="font-bold">{ad.location || 'Konum Belirtilmemiş'}</span>
-                            </div>
-                            <div className="flex items-center text-sm text-gray-400">
-                                <Clock size={16} className="mr-2 text-rose-500/60" />
-                                <span>{new Date(Number(ad.createdAt) || ad.createdAt).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' })}</span>
-                            </div>
+                    {error && (
+                        <div className="w-full p-4 mb-6 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-center gap-3 text-rose-400 text-sm font-medium">
+                            <AlertCircle size={18} />
+                            {error.message || 'İlanlar çekilirken bir hata oluştu.'}
                         </div>
+                    )}
 
-                        {ad.description && (
-                            <div className="mb-8 p-6 bg-white/5 rounded-2xl border border-white/5">
-                                <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">{ad.description}</p>
-                            </div>
-                        )}
+                    {/* Grid */}
+                    {!loading && adverts.length === 0 && !error ? (
+                        <div className="w-full py-20 flex flex-col items-center justify-center border border-dashed border-white/10 rounded-3xl bg-black/20">
+                            <Search size={48} className="text-gray-600 mb-4" />
+                            <h3 className="text-xl font-bold text-white mb-2">İlan Bulunamadı</h3>
+                            <p className="text-gray-400 text-sm">Filtreleri değiştirerek tekrar deneyin.</p>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                            {adverts.map((advert) => {
+                                const isSelected = selectedIds.includes(advert._id);
+                                const selectionDisabled = compareMode && !isSelected && selectedIds.length >= MAX_COMPARE;
+                                return (
+                                    <div
+                                        key={advert._id}
+                                        onClick={() => !selectionDisabled && handleCardClick(advert)}
+                                        className={`group bg-white/5 backdrop-blur-md border rounded-2xl overflow-hidden transition-all flex flex-col relative ${
+                                            isSelected
+                                                ? 'border-cyan-500/70 shadow-[0_0_25px_rgba(34,211,238,0.25)] ring-1 ring-cyan-500/40'
+                                                : 'border-white/10 hover:border-cyan-500/30 hover:transform hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(34,211,238,0.1)]'
+                                        } ${selectionDisabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+                                    >
+                                        {/* Selection checkbox overlay (compare mode only) */}
+                                        {compareMode && (
+                                            <div className="absolute top-3 right-3 z-10">
+                                                <div className={`w-7 h-7 rounded-lg flex items-center justify-center border-2 transition-colors ${
+                                                    isSelected
+                                                        ? 'bg-cyan-500 border-cyan-400 text-[#0B0F19]'
+                                                        : 'bg-black/60 border-white/30 text-transparent'
+                                                }`}>
+                                                    <Check size={16} strokeWidth={3} />
+                                                </div>
+                                            </div>
+                                        )}
 
-                        {seller && (
-                            <div className="bg-gradient-to-r from-rose-950/20 to-transparent border border-rose-500/10 rounded-2xl p-4 mb-8 flex items-center space-x-4">
-                                <div className="w-14 h-14 rounded-full overflow-hidden bg-rose-500/20 border border-rose-500/50 flex items-center justify-center flex-shrink-0">
-                                    {seller.profile_photo ? (
-                                        <img src={seller.profile_photo} alt={seller.username} className="w-full h-full object-cover" />
-                                    ) : (
-                                        <User size={24} className="text-rose-400" />
-                                    )}
-                                </div>
-                                <div>
-                                    <h4 className="text-white font-bold text-lg mb-1">@{seller.username || 'Kullanıcı'}</h4>
-                                    {seller.account_type === 'student' ? (
-                                        <span className="flex items-center gap-1 text-emerald-400 text-[10px] font-black uppercase tracking-wider">
-                                            <GraduationCap size={14} /> Öğrenci
-                                        </span>
-                                    ) : (
-                                        <span className="flex items-center gap-1 text-gray-400 text-[10px] font-black uppercase tracking-wider">
-                                            <User size={14} /> Sivil
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-                        )}
+                                        <div className="w-full h-48 bg-black/40 relative overflow-hidden flex items-center justify-center border-b border-white/5">
+                                            {advert.photos && advert.photos.length > 0 ? (
+                                                // eslint-disable-next-line @next/next/no-img-element
+                                                <img
+                                                    src={advert.photos[0]}
+                                                    alt={advert.title}
+                                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                                />
+                                            ) : (
+                                                <div className="flex flex-col items-center justify-center text-white/20">
+                                                    <ImageIcon size={40} strokeWidth={1} />
+                                                    <span className="text-xs mt-2 uppercase tracking-widest">Görsel Yok</span>
+                                                </div>
+                                            )}
 
+                                            <div className="absolute top-3 left-3">
+                                                <span className="px-3 py-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-lg text-[10px] font-black uppercase tracking-wider text-cyan-400 shadow-xl">
+                                                    {getCategoryName(advert)}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <div className="p-5 flex-1 flex flex-col justify-between">
+                                            <div>
+                                                <div className="flex justify-between items-start mb-3">
+                                                    <h2 className="text-base font-bold text-gray-100 leading-tight group-hover:text-cyan-300 transition-colors line-clamp-2">
+                                                        {advert.title}
+                                                    </h2>
+                                                </div>
+                                                <h3 className="text-xl font-black text-emerald-400 mb-4">
+                                                    {advert.price ? `${Number(advert.price).toLocaleString('tr-TR')} ₺` : 'Ücretsiz'}
+                                                </h3>
+                                            </div>
+
+                                            <div className="pt-4 border-t border-white/5 flex flex-col space-y-2">
+                                                <div className="flex items-center text-gray-400 text-xs">
+                                                    <MapPin size={14} className="mr-1.5 text-cyan-400" />
+                                                    <span className="truncate">{advert.location || "Kampüs İçi"}</span>
+                                                </div>
+                                                <div className="flex items-center text-gray-500 text-xs">
+                                                    <Clock size={14} className="mr-1.5" />
+                                                    <span>{advert.createdAt ? formatDate(advert.createdAt) : 'Tarih Yok'}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </main>
+            </div>
+
+            {/* Floating compare action bar */}
+            {compareMode && selectedIds.length > 0 && (
+                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9800] animate-in slide-in-from-bottom-5 fade-in duration-300">
+                    <div className="flex items-center gap-3 bg-[#0B0F19]/95 backdrop-blur-2xl border border-cyan-500/30 rounded-2xl px-4 py-3 shadow-[0_10px_40px_rgba(34,211,238,0.2)]">
+                        <span className="text-sm text-gray-300">
+                            <span className="font-black text-cyan-400">{selectedIds.length}</span> / {MAX_COMPARE} seçildi
+                        </span>
                         <button
-                            onClick={handlePrimaryAction}
-                            className="w-full py-5 rounded-2xl font-black text-lg transition-all flex items-center justify-center gap-3 bg-rose-600 hover:bg-rose-500 text-white shadow-[0_0_20px_rgba(225,29,72,0.4)] hover:shadow-[0_0_30px_rgba(225,29,72,0.6)] hover:-translate-y-1">
-                            <Send size={24} /> Hemen Yardıma Koş
+                            onClick={() => setSelectedIds([])}
+                            className="p-1.5 text-gray-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                            title="Seçimi temizle"
+                        >
+                            <X size={16} />
+                        </button>
+                        <button
+                            onClick={startComparison}
+                            disabled={selectedIds.length < MIN_COMPARE}
+                            className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-white/5 disabled:text-gray-600 text-white rounded-xl font-bold text-sm transition-colors"
+                        >
+                            <GitCompare size={16} />
+                            Karşılaştır
                         </button>
                     </div>
+                    {selectedIds.length < MIN_COMPARE && (
+                        <p className="text-[11px] text-gray-500 text-center mt-2">En az 2 ilan seçmelisin.</p>
+                    )}
                 </div>
-            </div>
+            )}
         </div>
     );
 }

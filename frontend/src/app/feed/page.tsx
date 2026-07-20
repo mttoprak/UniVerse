@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { gql } from '@apollo/client';
 import { useQuery } from '@apollo/client/react';
-import { Search, MapPin, Filter, Clock, ChevronDown, ImageIcon, AlertCircle } from 'lucide-react';
+import { Search, MapPin, Filter, Clock, ChevronDown, ImageIcon, AlertCircle, GitCompare, X, Check } from 'lucide-react';
+import { AI_HANDOFF_KEY, type AiHandoff } from '@/components/AiChatBubble';
 
 interface Advert {
     _id: string;
@@ -39,19 +40,22 @@ interface GetListingsVars {
 }
 
 const GET_LISTINGS_QUERY = gql`
-  query GetListings($q: String, $type: String, $sort: String) {
-    getListings(q: $q, type: $type, sort: $sort) {
-      id
-      title
-      price
-      category
-      type
-      location
-      createdAt
-      photos
+    query GetListings($q: String, $type: String, $sort: String) {
+        getListings(q: $q, type: $type, sort: $sort) {
+            id
+            title
+            price
+            category
+            type
+            location
+            createdAt
+            photos
+        }
     }
-  }
 `;
+
+const MAX_COMPARE = 4;
+const MIN_COMPARE = 2;
 
 export default function FeedPage() {
     const router = useRouter();
@@ -64,7 +68,10 @@ export default function FeedPage() {
     const [sortBy, setSortBy] = useState('newest');
     const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
 
-    // Debounced values so we don't refire the query on every keystroke
+    // --- Compare mode state ---
+    const [compareMode, setCompareMode] = useState(false);
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [debouncedCategories, setDebouncedCategories] = useState<string[]>([]);
 
@@ -76,7 +83,6 @@ export default function FeedPage() {
         return () => clearTimeout(t);
     }, [searchQuery, selectedCategories]);
 
-    // Redirect if not logged in
     useEffect(() => {
         const token = localStorage.getItem('accessToken');
         if (!token) router.push('/login');
@@ -91,17 +97,13 @@ export default function FeedPage() {
         fetchPolicy: 'cache-and-network',
     });
 
-    // Map id -> _id, drop urgent, apply price filter (client-side)
     const fetchedData = data?.getListings ?? [];
     const adverts: Advert[] = fetchedData
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .map((item: any) => ({ ...item, _id: item.id }))
-        .filter((ad: Advert) => ad.type !== 'urgent')
-        .filter((ad: Advert) => {
+        .map((item) => ({ ...item, _id: item.id }))
+        .filter((ad) => ad.type !== 'urgent')
+        .filter((ad) => {
             const priceNum = Number(ad.price);
-            if (minPrice && priceNum < Number(minPrice)) return false;
-            if (maxPrice && priceNum > Number(maxPrice)) return false;
-            return true;
+            return (!minPrice || priceNum >= Number(minPrice)) && (!maxPrice || priceNum <= Number(maxPrice));
         });
 
     const sortOptions = [
@@ -123,19 +125,14 @@ export default function FeedPage() {
 
     const handleCategoryToggle = (categoryId: string) => {
         setSelectedCategories(prev =>
-            prev.includes(categoryId)
-                ? prev.filter(c => c !== categoryId)
-                : [...prev, categoryId]
+            prev.includes(categoryId) ? prev.filter(c => c !== categoryId) : [...prev, categoryId]
         );
     };
 
     const formatDate = (dateString: string) => {
-        // PostgreSQL timestamps arrive as Unix-millisecond strings (e.g. "1782828794004").
-        // new Date("1782828794004") fails to parse — it must be a number.
         const ms = Number(dateString);
         const date = Number.isNaN(ms) ? new Date(dateString) : new Date(ms);
         if (Number.isNaN(date.getTime())) return 'Tarih Yok';
-
         const options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' };
         return date.toLocaleDateString('tr-TR', options);
     };
@@ -145,25 +142,68 @@ export default function FeedPage() {
         return found ? found.label : (advert.category || advert.type || 'İlan');
     };
 
+    /* ---------- Compare handlers ---------- */
+
+    const toggleCompareMode = () => {
+        setCompareMode((v) => !v);
+        setSelectedIds([]); // reset selection whenever the mode flips
+    };
+
+    const toggleSelect = (id: string) => {
+        setSelectedIds((prev) => {
+            if (prev.includes(id)) return prev.filter((x) => x !== id);
+            if (prev.length >= MAX_COMPARE) return prev; // cap at 4
+            return [...prev, id];
+        });
+    };
+
+    const handleCardClick = (advert: Advert) => {
+        if (compareMode) {
+            toggleSelect(advert._id);
+        } else {
+            router.push(`/listings/${advert._id}`);
+        }
+    };
+
+    const startComparison = () => {
+        if (selectedIds.length < MIN_COMPARE) return;
+
+        // Message format the backend expects: "karşılaştır: id id id"
+        const message = `karşılaştır: ${selectedIds.join(' ')}`;
+
+        const handoff: AiHandoff = {
+            conversationId: null,      // start a fresh conversation for the comparison
+            conversationTitle: null,
+            messages: [],
+            autoSend: message,         // /AI auto-sends this on arrival
+            autoSendCompareCount: selectedIds.length,  // for the styled compare chip
+        };
+
+        try {
+            sessionStorage.setItem(AI_HANDOFF_KEY, JSON.stringify(handoff));
+        } catch { /* storage unavailable; /AI will just open empty */ }
+
+        router.push('/AI');
+    };
+
     return (
         <div className="relative min-h-screen pt-24 pb-12 px-4 md:px-8">
 
             {/* Background */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10 flex items-center justify-center">
-                <div className="w-[60rem] h-[60rem] bg-cyan-600/10 rounded-full blur-[200px] mix-blend-screen flex-shrink-0"></div>
+                <div className="w-[60rem] h-[60rem] bg-cyan-600/10 rounded-full blur-[200px] mix-blend-screen shrink-0"></div>
             </div>
 
             <div className="max-w-7xl mx-auto flex flex-col lg:flex-row gap-8">
 
                 {/* Left Sidebar: Filters */}
-                <aside className="w-full lg:w-72 flex-shrink-0 space-y-6">
+                <aside className="w-full lg:w-72 shrink-0 space-y-6">
                     <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-[2rem] p-6 shadow-[0_0_30px_rgba(0,0,0,0.5)] sticky top-28">
                         <div className="flex items-center justify-between mb-6">
                             <h2 className="text-xl font-black text-white tracking-tight">Filtreler</h2>
                             <Filter size={20} className="text-cyan-400" />
                         </div>
 
-                        {/* Search Input */}
                         <div className="relative mb-6">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
                             <input
@@ -175,7 +215,6 @@ export default function FeedPage() {
                             />
                         </div>
 
-                        {/* Categories */}
                         <div className="space-y-3">
                             <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Kategoriler</h3>
                             {categoryOptions.map((cat) => (
@@ -186,14 +225,11 @@ export default function FeedPage() {
                                         onChange={() => handleCategoryToggle(cat.id)}
                                         className="form-checkbox w-4 h-4 bg-black/50 border-white/20 rounded accent-cyan-500 cursor-pointer"
                                     />
-                                    <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
-                                        {cat.label}
-                                    </span>
+                                    <span className="text-sm text-gray-300 group-hover:text-white transition-colors">{cat.label}</span>
                                 </label>
                             ))}
                         </div>
 
-                        {/* Price Filter */}
                         <div className="mt-6 mb-6">
                             <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Fiyat Aralığı</h3>
                             <div className="flex items-center space-x-2">
@@ -217,25 +253,35 @@ export default function FeedPage() {
 
                         <div className="h-px w-full bg-white/5 my-6"></div>
 
-                        {/* Price filter is client-side & reactive, so this just reassures the user */}
+                        {/* Compare mode toggle */}
                         <button
-                            className="w-full py-3 bg-cyan-600/20 hover:bg-cyan-600/40 border border-cyan-500/30 rounded-xl text-cyan-300 font-bold transition-all shadow-[0_0_15px_rgba(34,211,238,0.1)] hover:shadow-[0_0_20px_rgba(34,211,238,0.2)]"
+                            onClick={toggleCompareMode}
+                            className={`w-full py-3 flex items-center justify-center gap-2 rounded-xl font-bold transition-all border ${
+                                compareMode
+                                    ? 'bg-cyan-600/30 border-cyan-500/50 text-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.2)]'
+                                    : 'bg-cyan-600/20 hover:bg-cyan-600/40 border-cyan-500/30 text-cyan-300 shadow-[0_0_15px_rgba(34,211,238,0.1)]'
+                            }`}
                         >
-                            Fiyatı Uygula
+                            <GitCompare size={18} />
+                            {compareMode ? 'Karşılaştırmadan Çık' : 'Karşılaştırma Modu'}
                         </button>
+                        {compareMode && (
+                            <p className="text-[11px] text-gray-500 mt-2 text-center leading-snug">
+                                2–4 ilan seç, AI senin için karşılaştırsın.
+                            </p>
+                        )}
                     </div>
                 </aside>
 
                 {/* Main Content Area */}
                 <main className="flex-1">
 
-                    {/* Top Bar for Sorting */}
+                    {/* Top Bar */}
                     <div className="flex items-center justify-between mb-6 bg-black/20 backdrop-blur-md border border-white/5 rounded-2xl p-4 relative z-30">
                         <p className="text-sm text-gray-400">
                             {loading ? 'Yükleniyor...' : `${adverts.length} ilan bulundu`}
                         </p>
 
-                        {/* Sort Dropdown */}
                         <div className="relative">
                             <button
                                 onClick={() => setIsSortMenuOpen(!isSortMenuOpen)}
@@ -250,10 +296,7 @@ export default function FeedPage() {
                                     {sortOptions.map((option) => (
                                         <button
                                             key={option.id}
-                                            onClick={() => {
-                                                setSortBy(option.id);
-                                                setIsSortMenuOpen(false);
-                                            }}
+                                            onClick={() => { setSortBy(option.id); setIsSortMenuOpen(false); }}
                                             className={`w-full text-left px-4 py-3 text-sm transition-colors hover:bg-white/5 ${sortBy === option.id ? 'text-cyan-400 font-bold bg-cyan-500/10' : 'text-gray-300'}`}
                                         >
                                             {option.label}
@@ -264,7 +307,6 @@ export default function FeedPage() {
                         </div>
                     </div>
 
-                    {/* Error Message */}
                     {error && (
                         <div className="w-full p-4 mb-6 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-center gap-3 text-rose-400 text-sm font-medium">
                             <AlertCircle size={18} />
@@ -272,7 +314,7 @@ export default function FeedPage() {
                         </div>
                     )}
 
-                    {/* Advert Grid */}
+                    {/* Grid */}
                     {!loading && adverts.length === 0 && !error ? (
                         <div className="w-full py-20 flex flex-col items-center justify-center border border-dashed border-white/10 rounded-3xl bg-black/20">
                             <Search size={48} className="text-gray-600 mb-4" />
@@ -281,64 +323,113 @@ export default function FeedPage() {
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                            {adverts.map((advert) => (
-                                <div
-                                    key={advert._id}
-                                    onClick={() => router.push(`/listings/${advert._id}`)}
-                                    className="group bg-white/5 backdrop-blur-md border border-white/10 hover:border-cyan-500/30 rounded-2xl overflow-hidden transition-all hover:transform hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(34,211,238,0.1)] flex flex-col cursor-pointer relative"
-                                >
-                                    {/* Image Container */}
-                                    <div className="w-full h-48 bg-black/40 relative overflow-hidden flex items-center justify-center border-b border-white/5">
-                                        {advert.photos && advert.photos.length > 0 ? (
-                                            <img
-                                                src={advert.photos[0]}
-                                                alt={advert.title}
-                                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                                            />
-                                        ) : (
-                                            <div className="flex flex-col items-center justify-center text-white/20">
-                                                <ImageIcon size={40} strokeWidth={1} />
-                                                <span className="text-xs mt-2 uppercase tracking-widest">Görsel Yok</span>
+                            {adverts.map((advert) => {
+                                const isSelected = selectedIds.includes(advert._id);
+                                const selectionDisabled = compareMode && !isSelected && selectedIds.length >= MAX_COMPARE;
+                                return (
+                                    <div
+                                        key={advert._id}
+                                        onClick={() => !selectionDisabled && handleCardClick(advert)}
+                                        className={`group bg-white/5 backdrop-blur-md border rounded-2xl overflow-hidden transition-all flex flex-col relative ${
+                                            isSelected
+                                                ? 'border-cyan-500/70 shadow-[0_0_25px_rgba(34,211,238,0.25)] ring-1 ring-cyan-500/40'
+                                                : 'border-white/10 hover:border-cyan-500/30 hover:transform hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(34,211,238,0.1)]'
+                                        } ${selectionDisabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+                                    >
+                                        {/* Selection checkbox overlay (compare mode only) */}
+                                        {compareMode && (
+                                            <div className="absolute top-3 right-3 z-10">
+                                                <div className={`w-7 h-7 rounded-lg flex items-center justify-center border-2 transition-colors ${
+                                                    isSelected
+                                                        ? 'bg-cyan-500 border-cyan-400 text-[#0B0F19]'
+                                                        : 'bg-black/60 border-white/30 text-transparent'
+                                                }`}>
+                                                    <Check size={16} strokeWidth={3} />
+                                                </div>
                                             </div>
                                         )}
 
-                                        <div className="absolute top-3 left-3">
-                                            <span className="px-3 py-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-lg text-[10px] font-black uppercase tracking-wider text-cyan-400 shadow-xl">
-                                                {getCategoryName(advert)}
-                                            </span>
+                                        <div className="w-full h-48 bg-black/40 relative overflow-hidden flex items-center justify-center border-b border-white/5">
+                                            {advert.photos && advert.photos.length > 0 ? (
+                                                // eslint-disable-next-line @next/next/no-img-element
+                                                <img
+                                                    src={advert.photos[0]}
+                                                    alt={advert.title}
+                                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                                />
+                                            ) : (
+                                                <div className="flex flex-col items-center justify-center text-white/20">
+                                                    <ImageIcon size={40} strokeWidth={1} />
+                                                    <span className="text-xs mt-2 uppercase tracking-widest">Görsel Yok</span>
+                                                </div>
+                                            )}
+
+                                            <div className="absolute top-3 left-3">
+                                                <span className="px-3 py-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-lg text-[10px] font-black uppercase tracking-wider text-cyan-400 shadow-xl">
+                                                    {getCategoryName(advert)}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <div className="p-5 flex-1 flex flex-col justify-between">
+                                            <div>
+                                                <div className="flex justify-between items-start mb-3">
+                                                    <h2 className="text-base font-bold text-gray-100 leading-tight group-hover:text-cyan-300 transition-colors line-clamp-2">
+                                                        {advert.title}
+                                                    </h2>
+                                                </div>
+                                                <h3 className="text-xl font-black text-emerald-400 mb-4">
+                                                    {advert.price ? `${Number(advert.price).toLocaleString('tr-TR')} ₺` : 'Ücretsiz'}
+                                                </h3>
+                                            </div>
+
+                                            <div className="pt-4 border-t border-white/5 flex flex-col space-y-2">
+                                                <div className="flex items-center text-gray-400 text-xs">
+                                                    <MapPin size={14} className="mr-1.5 text-cyan-400" />
+                                                    <span className="truncate">{advert.location || "Kampüs İçi"}</span>
+                                                </div>
+                                                <div className="flex items-center text-gray-500 text-xs">
+                                                    <Clock size={14} className="mr-1.5" />
+                                                    <span>{advert.createdAt ? formatDate(advert.createdAt) : 'Tarih Yok'}</span>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
-
-                                    {/* Card Content */}
-                                    <div className="p-5 flex-1 flex flex-col justify-between">
-                                        <div>
-                                            <div className="flex justify-between items-start mb-3">
-                                                <h2 className="text-base font-bold text-gray-100 leading-tight group-hover:text-cyan-300 transition-colors line-clamp-2">
-                                                    {advert.title}
-                                                </h2>
-                                            </div>
-                                            <h3 className="text-xl font-black text-emerald-400 mb-4">
-                                                {advert.price ? `${Number(advert.price).toLocaleString('tr-TR')} ₺` : 'Ücretsiz'}
-                                            </h3>
-                                        </div>
-
-                                        <div className="pt-4 border-t border-white/5 flex flex-col space-y-2">
-                                            <div className="flex items-center text-gray-400 text-xs">
-                                                <MapPin size={14} className="mr-1.5 text-cyan-400" />
-                                                <span className="truncate">{advert.location || "Kampüs İçi"}</span>
-                                            </div>
-                                            <div className="flex items-center text-gray-500 text-xs">
-                                                <Clock size={14} className="mr-1.5" />
-                                                <span>{advert.createdAt ? formatDate(advert.createdAt) : 'Tarih Yok'}</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                 </main>
             </div>
+
+            {/* Floating compare action bar */}
+            {compareMode && selectedIds.length > 0 && (
+                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9800] animate-in slide-in-from-bottom-5 fade-in duration-300">
+                    <div className="flex items-center gap-3 bg-[#0B0F19]/95 backdrop-blur-2xl border border-cyan-500/30 rounded-2xl px-4 py-3 shadow-[0_10px_40px_rgba(34,211,238,0.2)]">
+                        <span className="text-sm text-gray-300">
+                            <span className="font-black text-cyan-400">{selectedIds.length}</span> / {MAX_COMPARE} seçildi
+                        </span>
+                        <button
+                            onClick={() => setSelectedIds([])}
+                            className="p-1.5 text-gray-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                            title="Seçimi temizle"
+                        >
+                            <X size={16} />
+                        </button>
+                        <button
+                            onClick={startComparison}
+                            disabled={selectedIds.length < MIN_COMPARE}
+                            className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-white/5 disabled:text-gray-600 text-white rounded-xl font-bold text-sm transition-colors"
+                        >
+                            <GitCompare size={16} />
+                            Karşılaştır
+                        </button>
+                    </div>
+                    {selectedIds.length < MIN_COMPARE && (
+                        <p className="text-[11px] text-gray-500 text-center mt-2">En az 2 ilan seçmelisin.</p>
+                    )}
+                </div>
+            )}
         </div>
     );
 }

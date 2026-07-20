@@ -54,9 +54,10 @@ type AIHistoryPreviewResponse {
 }
 
 type AIHistoryMessage {
-    role: String!                     # "user" | "assistant"
-    text: String                      # visible text (null if this turn is only cards)
-    listings: [PresentedListing!]!    # cards shown on this turn (empty for plain text turns)
+    role: String!
+    text: String
+    listings: [PresentedListing!]!
+    comparison: PresentedComparison
 }
 
 type AIHistoryResponse {
