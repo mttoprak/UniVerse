@@ -157,6 +157,8 @@ type Query {
 
     # router.get('/:id')
     getListing(id: ID!): Listing
+
+    getSimilarListings(id: ID!, limit: Int): [Listing!]!
 }
 
 # ─── MUTATIONS (REST'teki POST, PATCH, DELETE İşlemlerin) ────────────────

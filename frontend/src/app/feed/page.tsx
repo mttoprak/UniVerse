@@ -37,19 +37,13 @@ interface GetListingsVars {
     q?: string;
     type?: string;
     sort?: string;
+    limit?: number;
 }
 
 const GET_LISTINGS_QUERY = gql`
-    query GetListings($q: String, $type: String, $sort: String) {
-        getListings(q: $q, type: $type, sort: $sort) {
-            id
-            title
-            price
-            category
-            type
-            location
-            createdAt
-            photos
+    query GetListings($q: String, $type: String, $sort: String, $limit: Int) {
+        getListings(q: $q, type: $type, sort: $sort, limit: $limit) {
+            id title price category type location createdAt photos
         }
     }
 `;
@@ -93,13 +87,14 @@ export default function FeedPage() {
             q: debouncedSearch || undefined,
             type: debouncedCategories.length > 0 ? debouncedCategories.join(',') : undefined,
             sort: sortBy,
+            limit: 100,
         },
         fetchPolicy: 'cache-and-network',
     });
 
     const fetchedData = data?.getListings ?? [];
     const adverts: Advert[] = fetchedData
-        .map((item) => ({ ...item, _id: item.id }))
+        .map((item): Advert => ({ ...item, _id: item.id }))
         .filter((ad) => ad.type !== 'urgent')
         .filter((ad) => {
             const priceNum = Number(ad.price);

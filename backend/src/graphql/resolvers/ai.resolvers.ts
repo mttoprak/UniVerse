@@ -157,7 +157,7 @@ export const AIResolvers = {
                             comparison: {
                                 listings: cmpListings,
                                 attributes: input.attributes ?? null,
-                                comment: input.comment,
+                                comment: (input.comment ?? "").trim() || "Karşılaştırma",  // never null
                                 assumptionNote: input.assumptionNote ?? null,
                             },
                         });
@@ -217,7 +217,6 @@ export const AIResolvers = {
 
             checkStudentOnly(context);
 
-            // ── validate input ──────────────────────────────────────────────
             const parsed = askAIChatSchema.safeParse(args.input);
             if (!parsed.success) {
                 throw new Error("Geçersiz girdi: " + JSON.stringify(z.treeifyError(parsed.error)));
@@ -228,9 +227,10 @@ export const AIResolvers = {
 
             const message = parsed.data.message;
 
+            // ▶ FIX 3: always-on entry log
+            console.log("[askChatbot] message:", message, "| convId:", parsed.data.aiConversationId ?? "(new)", "| title flag:", parsed.data.title);
+
             // ── TITLE-ONLY FAST PATH ────────────────────────────────────────
-            // If the frontend only wants the stored title, return it and STOP
-            // (no AI loop, no message saved).
             if (parsed.data.title === true && parsed.data.aiConversationId) {
                 const conv = await context.prisma.aIConversation.findFirst({
                     where: {id: parsed.data.aiConversationId, userId: context.userId!},
@@ -242,6 +242,7 @@ export const AIResolvers = {
                     message: "",
                     messageAfter: null,
                     listings: [],
+                    comparison: null,   // ▶ explicit, so the shape is obvious
                     title: conv.title,
                 };
             }
@@ -250,7 +251,6 @@ export const AIResolvers = {
             let AIConversationId: string;
             let messages: any[] = [];
 
-            // ── per-request state the tools write into ──────────────────────
             const knownListingIds = new Set<string>();
             let presentedListings: { id: string; note?: string }[] = [];
             let comparison: {
@@ -262,48 +262,29 @@ export const AIResolvers = {
 
             let presentedMessages: { before: string; after?: string } | null = null;
 
-            // ── load or create conversation ─────────────────────────────────
             if (parsed.data.aiConversationId) {
                 AIConversationId = parsed.data.aiConversationId;
-
                 const conversation = await context.prisma.aIConversation.findFirst({
                     where: {id: AIConversationId, userId: context.userId!},
                     include: {chats: {orderBy: {createdAt: "asc"}}},
                 });
-
-                if (!conversation) {
-                    throw new Error("AIConversationId is invalid");
-                }
-
-                messages = conversation.chats.map(chat => ({
-                    role: chat.role,
-                    content: chat.content,
-                }));
+                if (!conversation) throw new Error("AIConversationId is invalid");
+                messages = conversation.chats.map(chat => ({role: chat.role, content: chat.content}));
             } else {
                 newAIconversation = await context.prisma.aIConversation.create({
-                    data: {
-                        userId: context.userId!,
-                        title: message.substring(0, 100),
-                    },
+                    data: {userId: context.userId!, title: message.substring(0, 100)},
                 });
                 AIConversationId = newAIconversation.id;
             }
 
-            // ── save the user message ───────────────
             const userContent = [{type: "text", text: message}];
             await context.prisma.aIChat.create({
-                data: {
-                    aiConversationId: AIConversationId,
-                    role: "user",
-                    content: userContent,
-                },
+                data: {aiConversationId: AIConversationId, role: "user", content: userContent},
             });
 
             // ── SUMMARIZE INJECTION ─────────────────────────────────────────
-            // If the message contains listing IDs (analyze:<id>, a URL, or pasted
-            // UUIDs), pre-fetch that data and build an augmented message for the
-            // MODEL. The original `message` was already saved above.
             const analyzeIds = extractListingIds(message);
+            console.log("[askChatbot] extractListingIds →", analyzeIds);   // ▶ FIX 3
             let modelMessageText = message;
 
             if (analyzeIds.length) {
@@ -314,8 +295,17 @@ export const AIResolvers = {
                     },
                 });
 
+                // ▶ FIX 3: this is the line that tells you what actually happened
+                console.log("[askChatbot] analyzeIds:", analyzeIds.length, "| found active:", found.length,
+                    "| foundIds:", found.map(l => l.id));
+
+                // ▶ FIX 1: register every extracted id (normalized), not only the ones
+                // that survived the active filter. present_comparison re-checks the DB
+                // anyway, so this only widens what the model is *allowed* to reference.
+                analyzeIds.forEach(id => knownListingIds.add(id.toLowerCase()));
+
                 if (found.length) {
-                    found.forEach(l => knownListingIds.add(l.id));
+                    found.forEach(l => knownListingIds.add(l.id.toLowerCase()));
 
                     const blocks = found.map(l => {
                         const avg = l.owner.rating_count > 0
@@ -327,14 +317,13 @@ export const AIResolvers = {
                     modelMessageText =
                         `[The user referenced ${found.length} listing(s). Read their message to understand what they want — a summary of each, a comparison, help choosing, or something else — and respond to that. Summarize plainly, note seller ratings factually, and never make character judgments about a seller beyond their rating. If you show the listing(s) visually, use present_listings with the ID(s) below.
 
-                        Listing data:
-                        ${blocks}]
-                        
-                        User's message: ${message}`;
+Listing data:
+${blocks}]
+
+User's message: ${message}`;
                 }
             }
 
-            // append the (possibly augmented) message for the model
             messages = [...messages, {role: "user", content: [{type: "text", text: modelMessageText}]}];
 
             // ── title generation (only on new conversations) ────────────────
@@ -490,11 +479,23 @@ export const AIResolvers = {
                     if (name === "present_comparison") {
                         console.log("present_comparison input listings:", input.listings);
                         console.log("knownListingIds:", [...knownListingIds]);
-                        const validListings = input.listings.filter((l: any) => knownListingIds.has(l.id));
+
+                        // ▶ FIX 2: normalize both sides so casing can't cause a false reject
+                        const validListings = input.listings.filter(
+                            (l: any) => knownListingIds.has(String(l.id).toLowerCase())
+                        );
+
                         console.log("validListings after filter:", validListings.length);
                         if (validListings.length < 2) {
                             return {
                                 content: "Need at least 2 valid listings to compare. Only use IDs from prior results.",
+                                isError: true,
+                            };
+                        }
+
+                        if (!input.comment || !String(input.comment).trim()) {
+                            return {
+                                content: "The 'comment' field is required and was empty. Re-call present_comparison including a comment with your guidance/recommendation.",
                                 isError: true,
                             };
                         }
@@ -597,7 +598,7 @@ export const AIResolvers = {
             try {
                 response = await client.messages.create({
                     model: "claude-sonnet-5",
-                    max_tokens: 1024,
+                    max_tokens: 4096,
                     system: systemPrompt,
                     tools,
                     messages,
@@ -635,7 +636,7 @@ export const AIResolvers = {
                 try {
                     response = await client.messages.create({
                         model: "claude-sonnet-5",
-                        max_tokens: 1024,
+                        max_tokens: 4096,
                         system: systemPrompt,
                         tools,
                         messages,
@@ -717,7 +718,7 @@ export const AIResolvers = {
                 comparisonForFrontend = {
                     listings: listingsWithData,
                     attributes: cmp.attributes ?? null,
-                    comment: cmp.comment,
+                    comment: cmp.comment ?? "",
                     assumptionNote: cmp.assumptionNote ?? null,
                 };
             }

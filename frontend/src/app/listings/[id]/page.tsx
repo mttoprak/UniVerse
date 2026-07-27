@@ -7,7 +7,7 @@ import {
     ChevronLeft, Heart, Share2, MessageSquare, MapPin, Calendar,
     User, ShieldCheck, Tag, Info, Loader2, Eye, AlertTriangle,
     Star, Send, Navigation, BookOpen, Briefcase, Link as LinkIcon,
-    ListPlus, Clock, GraduationCap, Bookmark, Folder, Plus, Check, X
+    ListPlus, Clock, GraduationCap, Bookmark, Folder, Plus, Check, X, ImageIcon
 } from 'lucide-react';
 
 const TYPE_MAP: Record<string, string> = {
@@ -85,6 +85,15 @@ const GET_LISTING_PAGE_DATA = `#graphql
         checkListingAgreement(listingId: $id) {
             hasAgreement
         }
+        getSimilarListings(id: $id, limit: 8) {
+            _id: id
+            title
+            price
+            type
+            category
+            location
+            photos
+        }
     }
 `;
 
@@ -136,6 +145,7 @@ export default function AdDetailPage() {
     const [isApplyModalOpen, setIsApplyModalOpen] = useState(false);
     const [isApplying, setIsApplying] = useState(false);
 
+    const [similar, setSimilar] = useState<any[]>([]);
     const [comments, setComments] = useState<any[]>([]);
     const [newComment, setNewComment] = useState('');
     const [rating, setRating] = useState(0);
@@ -181,6 +191,8 @@ export default function AdDetailPage() {
                 }
 
                 setAd(data.getListing);
+
+                setSimilar(data.getSimilarListings || []);
 
                 // Favoriler
                 const favoritesArray = data.getFavoriteListings || [];
@@ -760,6 +772,41 @@ export default function AdDetailPage() {
                         </div>
                     </div>
                 </div>
+
+                {/* ── BENZER İLANLAR ── */}
+                {similar.length > 0 && (
+                    <div className="mt-12">
+                        <h3 className="text-xl font-black text-white uppercase tracking-tight flex items-center space-x-2 mb-6">
+                            <Tag size={20} className="text-cyan-500" />
+                            <span>Benzer İlanlar</span>
+                        </h3>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            {similar.map((s: any) => (
+                                <div
+                                    key={s._id}
+                                    onClick={() => router.push(`/listings/${s._id}`)}
+                                    className="group bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden cursor-pointer hover:border-cyan-500/30 hover:-translate-y-1 transition-all flex flex-col"
+                                >
+                                    <div className="w-full h-32 bg-black/40 relative overflow-hidden flex items-center justify-center border-b border-white/5">
+                                        {s.photos && s.photos.length > 0 ? (
+                                            <img src={s.photos[0]} alt={s.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                        ) : (
+                                            <ImageIcon size={32} strokeWidth={1} className="text-white/20" />
+                                        )}
+                                    </div>
+                                    <div className="p-3 flex-1 flex flex-col justify-between">
+                                        <h4 className="text-sm font-bold text-gray-100 leading-tight line-clamp-2 group-hover:text-cyan-300 transition-colors">
+                                            {s.title}
+                                        </h4>
+                                        <span className="text-base font-black text-emerald-400 mt-2">
+                                            {s.price ? `${Number(s.price).toLocaleString('tr-TR')} ₺` : 'Ücretsiz'}
+                                        </span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
